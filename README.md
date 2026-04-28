@@ -38,6 +38,16 @@ muse-tmr --help
 python scripts/check_forbidden_files.py
 ```
 
+M1 data-source commands:
+
+```bash
+muse-tmr discover --source amused
+muse-tmr stream --source amused --duration-seconds 3600
+muse-tmr record --source amused --duration-hours 8
+```
+
+Short smoke-test recordings require `--allow-short`; normal overnight recordings are constrained to 2-8 hours.
+
 > **Finally!** Direct BLE connection to Muse S without proprietary SDKs. We're quite *amused* that we cracked the protocol nobody else has published online!
 
 ## 🎉 The Real Story
