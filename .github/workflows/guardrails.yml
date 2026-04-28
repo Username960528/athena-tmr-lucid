@@ -10,11 +10,15 @@ jobs:
   policy:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
+      - name: Check out repository
+        run: |
+          git init .
+          git remote add origin "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY"
+          git fetch --depth=1 origin "$GITHUB_REF"
+          git checkout --detach FETCH_HEAD
+      - name: Show Python
+        run: python3 --version
       - name: Check forbidden files
-        run: python scripts/check_forbidden_files.py
+        run: python3 scripts/check_forbidden_files.py
       - name: Check CLI scaffold
-        run: PYTHONPATH=src python -m muse_tmr.cli.main --help
+        run: PYTHONPATH=src python3 -m muse_tmr.cli.main --help
