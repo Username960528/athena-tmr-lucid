@@ -9,7 +9,6 @@ from pathlib import Path
 from typing import Optional, Sequence
 
 from muse_tmr import __version__
-from muse_tmr.data.recorder import OvernightRecorder, RecordingConfig
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -94,6 +93,8 @@ async def _stream(args: argparse.Namespace) -> int:
 
 
 async def _record(args: argparse.Namespace) -> int:
+    from muse_tmr.data.recorder import OvernightRecorder, RecordingConfig
+
     duration_seconds = (
         args.duration_seconds
         if args.duration_seconds is not None
