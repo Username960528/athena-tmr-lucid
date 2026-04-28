@@ -73,6 +73,8 @@ Prefer the existing simple module style until an issue explicitly introduces a p
 ## Safety And Data Rules
 
 - Do not commit proprietary Muse SDK binaries, headers, archives, installers, docs, or copied SDK code.
+- SDK must be downloaded separately and placed locally; do not commit.
+- See `docs/sdk_policy.md` and run `python scripts/check_forbidden_files.py` before publishing SDK-adjacent work.
 - Do not commit private overnight recordings, personal sleep data, dream reports, calibration files, or device identifiers.
 - Do not commit generated cue audio by default unless the issue explicitly asks for tiny test fixtures.
 - Keep raw recordings and session outputs gitignored.

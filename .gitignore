@@ -36,10 +36,26 @@ env/
 
 # Data files
 *.csv
+*.bin
+*.muse
+*.edf
+*.bdf
 *.pcap
 *.log
 sleep_data/
 *.btsnoop
+data/recordings/
+data/raw/
+data/sleep/
+data/reports/
+dream_reports/
+muse_data/*.bin
+raw_data/*.bin
+recorded_sessions/*.bin
+examples/recorded_sessions/*.bin
+audio/private/
+cues/private/
+*.private.json
 
 # Testing
 .pytest_cache/
@@ -58,3 +74,19 @@ docs/_build/
 btsnoop_hci.log
 bluetooth_hci.pcap
 bugreport*.zip
+
+# Muse SDK / proprietary vendor files
+vendor/muse_sdk/
+sdk/
+*.framework
+*.dylib
+*.dll
+
+# Secrets
+.env
+*.key
+*.pem
+
+# Keep public templates and placeholders tracked
+!.env.example
+!data/.gitkeep

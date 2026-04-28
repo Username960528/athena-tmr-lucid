@@ -1,0 +1,15 @@
+# Architecture
+
+The project keeps the existing amused-py BLE implementation as the low-level Muse S Athena data source and adds a separate `muse_tmr` layer for REM-TMR/TLR workflows.
+
+## Layers
+
+1. Source adapters: convert live or external streams into common Muse frames.
+2. Data layer: recording, metadata sidecars, and offline replay.
+3. Feature layer: sleep epochs and EEG/IMU/PPG/HR features.
+4. REM layer: heuristic and personal REM predictions.
+5. Gate and safety layer: stable REM checks, motion/arousal checks, cooldowns, and emergency stop.
+6. Protocol layer: puzzle assignment, TLR cues, TMR scheduler, and session state.
+7. Report layer: dream report, puzzle retest, and cued-vs-uncued analysis.
+
+The M0 scaffold intentionally avoids moving the existing top-level `muse_*.py` modules. Later issues can introduce adapters one component at a time.

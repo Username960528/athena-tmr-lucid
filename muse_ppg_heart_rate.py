@@ -11,7 +11,6 @@ Based on Muse S Athena specifications:
 import numpy as np
 from scipy import signal
 from scipy.signal import find_peaks
-import matplotlib.pyplot as plt
 from typing import List, Optional
 from dataclasses import dataclass
 
@@ -173,6 +172,12 @@ class PPGHeartRateExtractor:
     def plot_ppg_with_peaks(self, ppg_signal: np.ndarray, result: HeartRateResult,
                             sample_rate: int = 64, title: str = "PPG Signal with Detected Heartbeats"):
         """Plot PPG signal with detected peaks"""
+        try:
+            import matplotlib.pyplot as plt
+        except ModuleNotFoundError as exc:
+            raise RuntimeError(
+                "matplotlib is required for plotting; install requirements-viz.txt"
+            ) from exc
 
         time_axis = np.arange(len(ppg_signal)) / sample_rate
 

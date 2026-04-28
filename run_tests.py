@@ -7,6 +7,12 @@ Runs fast tests by default, use --all for complete test suite
 import sys
 import unittest
 import argparse
+import os
+
+REPO_ROOT = os.path.dirname(os.path.abspath(__file__))
+SRC_DIR = os.path.join(REPO_ROOT, "src")
+if os.path.isdir(SRC_DIR) and SRC_DIR not in sys.path:
+    sys.path.insert(0, SRC_DIR)
 
 def run_fast_tests():
     """Run only fast tests"""
