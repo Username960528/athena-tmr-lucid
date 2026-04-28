@@ -1,0 +1,137 @@
+# Agent Instructions
+
+This repository is the implementation workspace for the Muse S Athena REM-TMR/TLR project tracked under GitHub EPIC #1.
+
+## Project Goal
+
+Build an open-source, home-run Muse S Athena system for overnight recording, offline replay, REM-gated cue scheduling, TLR cues, puzzle cues, morning reporting, and cued-vs-uncued analysis.
+
+The target is protocol fidelity and measurable validation. Do not claim clinical, medical, or guaranteed lucid-dreaming efficacy.
+
+## Current Planning Source
+
+- EPIC: #1
+- Milestones: 0 through 9
+- Child issues: #3 through #42 are attached to the EPIC as sub-issues.
+- Work one GitHub issue at a time unless the user explicitly asks for a cross-cutting change.
+- Keep labels minimal. Do not create a large label taxonomy unless requested.
+
+Milestone themes:
+
+- M0: repository and governance
+- M1: data source and overnight recording
+- M2: replay and feature extraction
+- M3: REM detection
+- M4: audio cue system
+- M5: TMR/TLR protocol
+- M6: morning reports and experiment analysis
+- M7: OpenMuse and SDK adapters
+- M8: validation and effectiveness criteria
+- M9: documentation and agent handoff
+
+## Required Git Preflight
+
+Before editing anything:
+
+```bash
+git fetch origin --prune
+git status -sb
+git rev-list --left-right --count origin/main...HEAD
+```
+
+If the first number from `rev-list` is greater than 0, run:
+
+```bash
+git rebase origin/main
+```
+
+If the rebase conflicts, stop and ask the user how to resolve each conflict chunk. Do not guess.
+
+Repeat the same preflight before every commit and before every push.
+
+## Commit And Push Rules
+
+- Keep diffs small and scoped to the active issue.
+- Avoid broad formatting, reordering, or unrelated refactors.
+- Stage only files that belong to the current task.
+- Use normal `git push` unless you rebased; after a rebase, use `git push --force-with-lease`.
+- Never use plain `--force`.
+- If the worktree contains unrelated changes, leave them alone.
+
+## Repository Shape
+
+The current codebase is a Python BLE/Muse library derived from the amused-py direction:
+
+- Core modules live as top-level `muse_*.py` files.
+- Examples live in `examples/`.
+- Tests live in `tests/`.
+- `run_tests.py` runs the existing unittest suites.
+- `pyproject.toml` defines package metadata and dev dependencies.
+
+Prefer the existing simple module style until an issue explicitly introduces a package layout or CLI structure.
+
+## Safety And Data Rules
+
+- Do not commit proprietary Muse SDK binaries, headers, archives, installers, docs, or copied SDK code.
+- Do not commit private overnight recordings, personal sleep data, dream reports, calibration files, or device identifiers.
+- Do not commit generated cue audio by default unless the issue explicitly asks for tiny test fixtures.
+- Keep raw recordings and session outputs gitignored.
+- Do not rotate, print, or modify secrets or tokens.
+- Do not add network upload, telemetry, cloud sync, or remote reporting without explicit user approval.
+
+## Implementation Guidance
+
+- Prefer deterministic replay and synthetic fixtures before live BLE tests.
+- Separate live device access from offline processing so tests can run without a Muse device.
+- Preserve timestamps, sample rates, modality names, units, and source metadata.
+- Treat missing modalities as normal. Muse sessions may lack PPG, HR, IMU, or clean EEG for periods.
+- Use conservative defaults for sleep-time audio: low volume, fade in/out, cooldowns, arousal guards, and emergency stop.
+- Log cue decisions as structured events: play, skip, block reason, pause, stop, volume, and timing.
+- Keep REM detection and cue scheduling separate. REM probability must not directly trigger audio without the stable gate and safety checks.
+- Keep validation language precise: report metrics and limitations instead of promising effectiveness.
+
+## Testing Expectations
+
+For Python changes, run the fastest relevant checks:
+
+```bash
+python run_tests.py
+```
+
+For targeted changes, prefer focused tests first, for example:
+
+```bash
+python -m unittest tests.test_realtime_decoder
+python -m unittest tests.test_raw_stream
+python -m unittest tests.test_ppg_fnirs_fast
+```
+
+Run all tests when shared behavior, binary formats, parser logic, replay, or scheduler contracts change:
+
+```bash
+python run_tests.py --all
+```
+
+For docs-only changes, at minimum run:
+
+```bash
+git diff --check
+```
+
+## Documentation Rules
+
+- Update README or project docs when adding a user-visible command, protocol step, file format, or safety behavior.
+- Keep setup instructions reproducible from a clean checkout.
+- Distinguish required dependencies from optional visualization, OpenMuse, or SDK-related adapters.
+- Document any binary output format and generated artifact location before relying on it.
+
+## Issue Handoff
+
+When finishing an issue, leave enough context for the next agent:
+
+- what changed
+- how it was tested
+- remaining risks or limitations
+- any follow-up issue numbers
+
+Prefer small PRs or commits tied to a single issue number.
