@@ -5,6 +5,39 @@
 [![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
+## Muse REM-TMR Project Layer
+
+This repository is being extended into a Muse S Athena REM-TMR/TLR research tool for overnight recording, offline replay, REM-gated cue scheduling, puzzle cue assignment, morning dream reports, retests, and cued-vs-uncued analysis.
+
+The project is not a medical device and must not be described as clinical, diagnostic, therapeutic, or guaranteed to induce lucid dreams. The near-term target is protocol fidelity, safety guardrails, structured logging, and measurable validation.
+
+High-level architecture:
+
+```text
+Muse S Athena
+  -> amused-py BLE source
+  -> unified Muse frame stream
+  -> recorder and offline replay
+  -> EEG/IMU/PPG/HR feature extraction
+  -> REM detector and stable REM gate
+  -> safety checks and audio cue scheduler
+  -> TLR/puzzle cue protocol
+  -> morning report, retest, and analysis
+```
+
+The new REM-TMR code lives under `src/muse_tmr/`. The existing top-level `muse_*.py` modules remain the forked BLE/data-source layer.
+
+Dependency decision: this repository currently uses a forked-source strategy for `Amused-EEG/amused-py`, pinned to upstream commit `bce20f98ddc7fa2efe3219d1b5d2f7554a55eb97`. The sync and contribution policy is recorded in `docs/dependency_strategy.md` and `pyproject.toml`.
+
+Local development:
+
+```bash
+pip install -e .
+python -m muse_tmr.cli.main --help
+muse-tmr --help
+python scripts/check_forbidden_files.py
+```
+
 > **Finally!** Direct BLE connection to Muse S without proprietary SDKs. We're quite *amused* that we cracked the protocol nobody else has published online!
 
 ## 🎉 The Real Story

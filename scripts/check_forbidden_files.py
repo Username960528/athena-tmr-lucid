@@ -1,0 +1,88 @@
+#!/usr/bin/env python3
+"""Fail when tracked or publishable files violate SDK/private-data policy."""
+
+from __future__ import annotations
+
+import fnmatch
+import subprocess
+import sys
+from pathlib import Path
+from typing import Iterable, List
+
+
+FORBIDDEN_PATTERNS = (
+    ".env",
+    "*.bdf",
+    "*.bin",
+    "*.dll",
+    "*.dylib",
+    "*.edf",
+    "*.framework",
+    "*.framework/*",
+    "*.key",
+    "*.muse",
+    "*.pem",
+    "*.private.json",
+    "*.so",
+    "audio/private/*",
+    "cues/private/*",
+    "data/raw/*",
+    "data/recordings/*",
+    "data/reports/*",
+    "data/sleep/*",
+    "dream_reports/*",
+    "sdk/*",
+    "vendor/muse_sdk/*",
+)
+
+# Existing tiny fixtures are allowed for now. New binary recordings should not
+# be committed unless they are explicitly reviewed and added here.
+ALLOWLIST = {
+    "examples/recorded_sessions/muse_20250824_202226.bin",
+    "muse_data/muse_20250824_172756.bin",
+    "tests/test_data/muse_20250824_172756.bin",
+}
+
+
+def git_files() -> List[str]:
+    cmd = [
+        "git",
+        "ls-files",
+        "-z",
+        "--cached",
+        "--others",
+        "--exclude-standard",
+    ]
+    proc = subprocess.run(cmd, check=True, capture_output=True)
+    return [
+        Path(item.decode()).as_posix()
+        for item in proc.stdout.split(b"\0")
+        if item
+    ]
+
+
+def is_forbidden(path: str) -> bool:
+    if path in ALLOWLIST:
+        return False
+    return any(fnmatch.fnmatch(path, pattern) for pattern in FORBIDDEN_PATTERNS)
+
+
+def violations(paths: Iterable[str]) -> List[str]:
+    return sorted(path for path in paths if is_forbidden(path))
+
+
+def main() -> int:
+    bad = violations(git_files())
+    if not bad:
+        print("No forbidden SDK, secret, recording, report, or private audio files found.")
+        return 0
+
+    print("Forbidden files detected:")
+    for path in bad:
+        print(f"- {path}")
+    print("\nSee docs/sdk_policy.md.")
+    return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -16,7 +16,6 @@ from dataclasses import dataclass, field
 from typing import List, Dict, Any, Tuple, Optional
 from datetime import datetime
 import os
-import matplotlib.pyplot as plt
 from collections import defaultdict
 
 @dataclass
@@ -383,6 +382,12 @@ class MuseSleepParser:
     def plot_eeg_samples(self, session: ParsedSession, channel: str = 'TP9', 
                          start_idx: int = 0, num_samples: int = 2560):
         """Plot EEG samples (10 seconds at 256 Hz)"""
+        try:
+            import matplotlib.pyplot as plt
+        except ModuleNotFoundError as exc:
+            raise RuntimeError(
+                "matplotlib is required for plotting; install requirements-viz.txt"
+            ) from exc
         
         if channel not in session.eeg_data or not session.eeg_data[channel]:
             print(f"No data for channel {channel}")

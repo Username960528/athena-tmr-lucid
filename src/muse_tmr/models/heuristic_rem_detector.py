@@ -1,0 +1,1 @@
+"""Heuristic REM detector baseline."""
