@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import datetime as dt
+import os
 from pathlib import Path
 from typing import Optional, Sequence
 
@@ -40,7 +41,14 @@ def build_parser() -> argparse.ArgumentParser:
     record_parser.add_argument("--preset", default="p1034")
     record_parser.add_argument("--duration-hours", type=float, default=8.0)
     record_parser.add_argument("--duration-seconds", type=float)
-    record_parser.add_argument("--output-dir", type=Path)
+    record_parser.add_argument(
+        "--output-dir",
+        type=Path,
+        help=(
+            "Recording directory. Relative paths resolve under the current working "
+            "directory, or under the project checkout when launched via macOS Python.app."
+        ),
+    )
     record_parser.add_argument("--allow-short", action="store_true", help="Allow short smoke-test recordings.")
     record_parser.add_argument("--quiet", action="store_true")
     return parser
@@ -100,7 +108,7 @@ async def _record(args: argparse.Namespace) -> int:
         if args.duration_seconds is not None
         else args.duration_hours * 3600
     )
-    output_dir = args.output_dir or _default_recording_dir()
+    output_dir = _resolve_output_dir(args.output_dir) if args.output_dir else _default_recording_dir()
     source = _build_source(args, duration_seconds=0)
     recorder = OvernightRecorder(
         RecordingConfig(
@@ -129,7 +137,40 @@ def _build_source(args: argparse.Namespace, duration_seconds: int):
 
 def _default_recording_dir() -> Path:
     timestamp = dt.datetime.now().strftime("%Y%m%d_%H%M%S")
-    return Path("data/recordings") / timestamp
+    return _default_path_base() / "data" / "recordings" / timestamp
+
+
+def _resolve_output_dir(output_dir: Path) -> Path:
+    output_dir = output_dir.expanduser()
+    if output_dir.is_absolute():
+        return output_dir
+    return _default_path_base() / output_dir
+
+
+def _default_path_base() -> Path:
+    cwd = Path.cwd()
+    if _is_writable_non_root(cwd):
+        return cwd.resolve()
+
+    project_root = _find_project_root(Path(__file__).resolve())
+    if project_root is not None:
+        return project_root
+
+    return Path.home().resolve()
+
+
+def _is_writable_non_root(path: Path) -> bool:
+    if path.parent == path:
+        return False
+    return os.access(path, os.W_OK)
+
+
+def _find_project_root(start: Path) -> Optional[Path]:
+    current = start if start.is_dir() else start.parent
+    for candidate in (current, *current.parents):
+        if (candidate / "pyproject.toml").exists() and (candidate / "src" / "muse_tmr").exists():
+            return candidate
+    return None
 
 
 if __name__ == "__main__":

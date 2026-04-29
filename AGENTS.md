@@ -91,6 +91,15 @@ Prefer the existing simple module style until an issue explicitly introduces a p
 - Log cue decisions as structured events: play, skip, block reason, pause, stop, volume, and timing.
 - Keep REM detection and cue scheduling separate. REM probability must not directly trigger audio without the stable gate and safety checks.
 - Keep validation language precise: report metrics and limitations instead of promising effectiveness.
+- On macOS, direct Python BLE commands may abort in TCC before Python logs if the launching
+  bundle lacks Bluetooth privacy metadata. For live smoke tests, prefer a Homebrew Python
+  virtualenv launched through `Python.app` with `open -W -n --env PYTHONPATH=... --args -m muse_tmr.cli.main ...`.
+- For live `record` smoke tests, use `--allow-short` and either an explicit `--output-dir`
+  under `data/recordings/` or the CLI default. Never commit raw recordings, metadata with
+  device identifiers, or generated session summaries.
+- M1 live BLE smoke criteria: `discover` finds the Muse, `stream` reports nonzero frames
+  across expected modalities, and `record` writes `raw_amused.bin`, `metadata.json`,
+  `events.jsonl`, and `summary.json` with `stop_reason=duration_complete`.
 
 ## Testing Expectations
 
