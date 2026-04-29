@@ -24,6 +24,10 @@ def run_fast_tests():
         'tests.test_raw_stream',
         'tests.test_realtime_decoder',
         'tests.test_ppg_fnirs_fast',  # Fast version
+        'tests.test_sample_types',
+        'tests.test_cli',
+        'tests.test_recorder',
+        'tests.test_replay',
     ]
     
     for module in fast_modules:

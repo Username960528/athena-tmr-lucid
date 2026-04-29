@@ -85,6 +85,18 @@ muse-tmr record --source amused --address "$MUSE_ADDR" --duration-seconds 60 --a
 If using the `Python.app` workaround, keep the same `open ... "$PYAPP" --args` wrapper
 and replace only the command after `--args` with the `stream` or `record` invocation.
 
+M2 offline replay commands:
+
+```bash
+muse-tmr replay data/recordings/<session>
+muse-tmr replay data/recordings/<session> --speed 1.0
+muse-tmr replay data/recordings/<session> --speed 20 --start-seconds 1800 --end-seconds 3600
+```
+
+Replay accepts either a recording directory or a `raw_amused.bin` path. `--speed 1.0`
+is real time; `--speed 0.0` replays as fast as possible for tests and batch feature
+extraction.
+
 > **Finally!** Direct BLE connection to Muse S without proprietary SDKs. We're quite *amused* that we cracked the protocol nobody else has published online!
 
 ## 🎉 The Real Story

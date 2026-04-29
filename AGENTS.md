@@ -100,6 +100,9 @@ Prefer the existing simple module style until an issue explicitly introduces a p
 - M1 live BLE smoke criteria: `discover` finds the Muse, `stream` reports nonzero frames
   across expected modalities, and `record` writes `raw_amused.bin`, `metadata.json`,
   `events.jsonl`, and `summary.json` with `stop_reason=duration_complete`.
+- For M2 replay/features, use `muse_tmr.data.replay.ReplaySession` as the offline source.
+  It emits the same `MuseFrame` type as live BLE and supports real-time, accelerated,
+  fastest-possible, and relative time-range replay. Keep feature tests synthetic or replay-based.
 
 ## Testing Expectations
 

@@ -34,6 +34,17 @@ def build_parser() -> argparse.ArgumentParser:
     stream_parser.add_argument("--duration-seconds", type=int, default=3600)
     stream_parser.add_argument("--quiet", action="store_true")
 
+    replay_parser = subparsers.add_parser("replay", help="Replay a recorded Muse session.")
+    replay_parser.add_argument("input", type=Path, help="Recording directory or raw_amused.bin path.")
+    replay_parser.add_argument(
+        "--speed",
+        type=float,
+        default=0.0,
+        help="Replay speed multiplier. 1.0 is real time; 0.0 replays as fast as possible.",
+    )
+    replay_parser.add_argument("--start-seconds", type=float, help="Relative replay start offset.")
+    replay_parser.add_argument("--end-seconds", type=float, help="Relative replay end offset.")
+
     record_parser = subparsers.add_parser("record", help="Record an overnight Muse session.")
     record_parser.add_argument("--source", choices=("amused",), default="amused")
     record_parser.add_argument("--address", help="Muse BLE address. If omitted, discovery is used.")
@@ -65,6 +76,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         return asyncio.run(_discover(args))
     if args.command == "stream":
         return asyncio.run(_stream(args))
+    if args.command == "replay":
+        return asyncio.run(_replay(args))
     if args.command == "record":
         return asyncio.run(_record(args))
 
@@ -96,6 +109,35 @@ async def _stream(args: argparse.Namespace) -> int:
     print(
         f"stream complete source={metadata.source_name} "
         f"device={metadata.device_name} frames={frame_count} modalities={modality_counts}"
+    )
+    return 0
+
+
+async def _replay(args: argparse.Namespace) -> int:
+    from muse_tmr.data.replay import ReplayConfig, ReplaySession
+
+    session = ReplaySession(
+        ReplayConfig(
+            input_path=args.input,
+            speed=args.speed,
+            start_seconds=args.start_seconds,
+            end_seconds=args.end_seconds,
+        )
+    )
+    metadata = await session.connect()
+    frame_count = 0
+    modality_counts = {}
+    try:
+        async for frame in session.stream():
+            frame_count += 1
+            for modality in frame.modalities():
+                modality_counts[modality] = modality_counts.get(modality, 0) + 1
+    finally:
+        await session.stop()
+
+    print(
+        f"replay complete source={metadata.source_name} "
+        f"input={session.raw_path} frames={frame_count} modalities={modality_counts}"
     )
     return 0
 

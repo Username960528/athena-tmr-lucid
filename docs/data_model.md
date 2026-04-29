@@ -22,3 +22,18 @@ Each sample type supports `to_dict()` and `from_dict()`. `MuseFrame` additionall
 ## Source Attribution
 
 Every sample and frame carries a `source` string. The amused-py adapter uses `amused`; future OpenMuse and SDK adapters should use distinct source names.
+
+## Offline Replay
+
+`muse_tmr.data.replay.ReplaySession` reads a recording directory or `raw_amused.bin`,
+decodes raw packets through the same TAG decoder used by live streaming, and emits
+`MuseFrame` objects for downstream epoch building and feature extraction.
+
+Replay speed is explicit:
+
+- `speed=1.0` preserves real-time packet spacing.
+- `speed>1.0` accelerates replay.
+- `speed=0.0` disables sleeps for tests and batch processing.
+
+`start_seconds` and `end_seconds` are relative to the raw recording start, allowing
+feature code to replay a specific sleep segment without loading unrelated packets.
