@@ -1,4 +1,9 @@
-"""Data models, recording, and replay."""
+"""Data models for Muse frames.
+
+Keep this package initializer lightweight. Recorder and watchdog modules import
+source contracts, so re-exporting them here creates circular imports when source
+modules import `muse_tmr.data.sample_types`.
+"""
 
 from muse_tmr.data.sample_types import (
     BatterySample,
@@ -9,8 +14,6 @@ from muse_tmr.data.sample_types import (
     PPGSample,
     frame_from_decoded,
 )
-from muse_tmr.data.recorder import OvernightRecorder, RecordingConfig, RecordingSummary
-from muse_tmr.data.watchdog import RecordingWatchdog, WatchdogEvent
 
 __all__ = [
     "BatterySample",
@@ -19,10 +22,5 @@ __all__ = [
     "IMUSample",
     "MuseFrame",
     "PPGSample",
-    "OvernightRecorder",
-    "RecordingConfig",
-    "RecordingSummary",
-    "RecordingWatchdog",
-    "WatchdogEvent",
     "frame_from_decoded",
 ]

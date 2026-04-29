@@ -1,6 +1,7 @@
 import unittest
 
 from muse_tmr.cli.main import build_parser
+from muse_tmr.sources.amused_source import AmusedSource
 
 
 class TestCli(unittest.TestCase):
@@ -28,6 +29,9 @@ class TestCli(unittest.TestCase):
 
         self.assertEqual(args.command, "record")
         self.assertEqual(args.duration_hours, 8.0)
+
+    def test_amused_source_import_does_not_cycle(self):
+        self.assertEqual(AmusedSource.strategy, "forked-source")
 
 
 if __name__ == "__main__":
