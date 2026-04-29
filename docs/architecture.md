@@ -13,3 +13,9 @@ The project keeps the existing amused-py BLE implementation as the low-level Mus
 7. Report layer: dream report, puzzle retest, and cued-vs-uncued analysis.
 
 The M0 scaffold intentionally avoids moving the existing top-level `muse_*.py` modules. Later issues can introduce adapters one component at a time.
+
+## M1 Source And Recording Flow
+
+`BaseMuseSource` defines the source contract: discover devices, connect, stream `MuseFrame` objects, and stop. `AmusedSource` adapts the existing `MuseStreamClient` callback model into that contract.
+
+`OvernightRecorder` consumes any `BaseMuseSource`, writes `raw_amused.bin`, `metadata.json`, `events.jsonl`, and `summary.json`, and uses `RecordingWatchdog` to detect no-data timeouts and modality dropouts.

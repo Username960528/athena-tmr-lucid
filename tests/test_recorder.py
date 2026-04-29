@@ -1,0 +1,152 @@
+import asyncio
+import json
+import tempfile
+import unittest
+from pathlib import Path
+
+from muse_tmr.data.recorder import OvernightRecorder, RecordingConfig
+from muse_tmr.data.sample_types import EEGSample, MuseFrame
+from muse_tmr.data.watchdog import RecordingWatchdog
+from muse_tmr.sources.base_source import BaseMuseSource, MuseDeviceInfo, MuseSourceMetadata
+
+
+class RecordingFakeSource(BaseMuseSource):
+    def __init__(self):
+        self.connect_count = 0
+        self.stop_count = 0
+
+    async def discover(self):
+        return [MuseDeviceInfo(name="Muse Fake", address="fake")]
+
+    async def connect(self, device=None):
+        self.connect_count += 1
+        return MuseSourceMetadata(
+            source_name="fake",
+            device_name="Muse Fake",
+            device_id="fake",
+            capabilities={"eeg": True, "raw_packets": True},
+        )
+
+    async def stream(self):
+        yield MuseFrame(
+            timestamp=1.0,
+            eeg=EEGSample(timestamp=1.0, channels_uv={"TP9": [0.1]}),
+            source="fake",
+            raw_packet=b"\x01\x02",
+        )
+
+    async def stop(self):
+        self.stop_count += 1
+
+
+class DropoutFakeSource(RecordingFakeSource):
+    async def stream(self):
+        if self.connect_count == 1:
+            await asyncio.sleep(0.05)
+            return
+        yield MuseFrame(
+            timestamp=2.0,
+            eeg=EEGSample(timestamp=2.0, channels_uv={"TP9": [0.2]}),
+            source="fake",
+            raw_packet=b"\x03\x04",
+        )
+
+
+class ErrorThenRecoverySource(RecordingFakeSource):
+    async def stream(self):
+        if self.connect_count == 1:
+            raise RuntimeError("simulated disconnect")
+        yield MuseFrame(
+            timestamp=3.0,
+            eeg=EEGSample(timestamp=3.0, channels_uv={"TP9": [0.3]}),
+            source="fake",
+            raw_packet=b"\x05\x06",
+        )
+
+
+class TestOvernightRecorder(unittest.IsolatedAsyncioTestCase):
+    async def test_record_writes_expected_outputs(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            source = RecordingFakeSource()
+            recorder = OvernightRecorder(
+                RecordingConfig(
+                    output_dir=Path(tmp),
+                    duration_seconds=0.01,
+                    allow_short=True,
+                )
+            )
+
+            summary = await recorder.record(source)
+
+            self.assertEqual(summary.frame_count, 1)
+            self.assertEqual(summary.raw_packet_count, 1)
+            self.assertTrue(Path(summary.raw_path).exists())
+            self.assertTrue(Path(summary.metadata_path).exists())
+            self.assertTrue(Path(summary.events_path).exists())
+            self.assertTrue(Path(summary.summary_path).exists())
+
+            payload = json.loads(Path(summary.summary_path).read_text())
+            self.assertEqual(payload["modality_counts"]["eeg"], 1)
+
+    async def test_no_data_timeout_reconnects_and_continues(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            source = DropoutFakeSource()
+            watchdog = RecordingWatchdog(
+                no_data_timeout_seconds=0.01,
+                modality_timeout_seconds=1.0,
+                backoff_base_seconds=0.0,
+            )
+            recorder = OvernightRecorder(
+                RecordingConfig(
+                    output_dir=Path(tmp),
+                    duration_seconds=0.08,
+                    no_data_timeout_seconds=0.01,
+                    max_reconnect_attempts=2,
+                    allow_short=True,
+                ),
+                watchdog=watchdog,
+            )
+
+            summary = await recorder.record(source)
+
+            self.assertGreaterEqual(summary.reconnect_attempts, 1)
+            self.assertEqual(summary.frame_count, 1)
+            events = Path(summary.events_path).read_text()
+            self.assertIn("no_data_timeout", events)
+            self.assertIn("reconnect_scheduled", events)
+
+    async def test_stream_error_reconnects_and_logs_error(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            source = ErrorThenRecoverySource()
+            watchdog = RecordingWatchdog(
+                no_data_timeout_seconds=0.01,
+                modality_timeout_seconds=1.0,
+                backoff_base_seconds=0.0,
+            )
+            recorder = OvernightRecorder(
+                RecordingConfig(
+                    output_dir=Path(tmp),
+                    duration_seconds=0.05,
+                    no_data_timeout_seconds=0.01,
+                    max_reconnect_attempts=2,
+                    allow_short=True,
+                ),
+                watchdog=watchdog,
+            )
+
+            summary = await recorder.record(source)
+
+            self.assertGreaterEqual(summary.reconnect_attempts, 1)
+            self.assertEqual(summary.frame_count, 1)
+            events = Path(summary.events_path).read_text()
+            self.assertIn("stream_error", events)
+            self.assertIn("simulated disconnect", events)
+
+    def test_duration_requires_overnight_window_unless_allowed(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with self.assertRaises(ValueError):
+                RecordingConfig(output_dir=Path(tmp), duration_seconds=10).validate()
+
+
+if __name__ == "__main__":
+    unittest.main()

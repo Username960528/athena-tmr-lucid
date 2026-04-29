@@ -2,9 +2,17 @@
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import AsyncIterator, Mapping
+from typing import AsyncIterator, Mapping, Optional, Sequence
 
 from muse_tmr.data.sample_types import MuseFrame
+
+
+@dataclass(frozen=True)
+class MuseDeviceInfo:
+    name: str
+    address: str
+    rssi: int = -100
+    metadata: Optional[Mapping[str, str]] = None
 
 
 @dataclass(frozen=True)
@@ -13,11 +21,16 @@ class MuseSourceMetadata:
     device_name: str
     device_id: str
     capabilities: Mapping[str, bool]
+    metadata: Optional[Mapping[str, str]] = None
 
 
 class BaseMuseSource(ABC):
     @abstractmethod
-    async def connect(self) -> MuseSourceMetadata:
+    async def discover(self) -> Sequence[MuseDeviceInfo]:
+        """Discover available devices for this source."""
+
+    @abstractmethod
+    async def connect(self, device: Optional[MuseDeviceInfo] = None) -> MuseSourceMetadata:
         """Connect to the source and return device metadata."""
 
     @abstractmethod
