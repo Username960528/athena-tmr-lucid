@@ -114,6 +114,24 @@ async for epoch in builder.build(session.stream()):
 The same builder accepts live `MuseFrame` streams from `AmusedSource`; missing modalities
 are represented as coverage/quality flags instead of errors.
 
+M2 EEG feature extraction:
+
+```python
+from pathlib import Path
+from muse_tmr.features.eeg_features import (
+    export_eeg_feature_rows,
+    extract_eeg_feature_rows,
+)
+
+rows = extract_eeg_feature_rows(epochs)
+export_eeg_feature_rows(rows, Path("data/reports/eeg_features.csv"))
+```
+
+EEG rows include band powers for delta/theta/alpha/beta/gamma, relative powers,
+theta-alpha and slow-fast ratios, frontal/posterior asymmetry, a frontal
+eye-movement proxy, and artifact flags. CSV export is always available; Parquet export
+uses the installed pandas Parquet engine when available.
+
 > **Finally!** Direct BLE connection to Muse S without proprietary SDKs. We're quite *amused* that we cracked the protocol nobody else has published online!
 
 ## 🎉 The Real Story
