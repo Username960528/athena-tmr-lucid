@@ -103,6 +103,9 @@ Prefer the existing simple module style until an issue explicitly introduces a p
 - For M2 replay/features, use `muse_tmr.data.replay.ReplaySession` as the offline source.
   It emits the same `MuseFrame` type as live BLE and supports real-time, accelerated,
   fastest-possible, and relative time-range replay. Keep feature tests synthetic or replay-based.
+- Use `muse_tmr.features.epochs.EpochBuilder` for 30-second sleep windows. It must accept
+  both live source streams and replay streams, tolerate missing modalities, and expose
+  coverage plus quality flags for downstream EEG/IMU/PPG feature modules.
 
 ## Testing Expectations
 

@@ -97,6 +97,23 @@ Replay accepts either a recording directory or a `raw_amused.bin` path. `--speed
 is real time; `--speed 0.0` replays as fast as possible for tests and batch feature
 extraction.
 
+M2 epoch building:
+
+```python
+from pathlib import Path
+from muse_tmr.data.replay import ReplayConfig, ReplaySession
+from muse_tmr.features.epochs import EpochBuilder, EpochConfig
+
+session = ReplaySession(ReplayConfig(Path("data/recordings/<session>"), speed=0.0))
+builder = EpochBuilder(EpochConfig(epoch_seconds=30, stride_seconds=30))
+
+async for epoch in builder.build(session.stream()):
+    print(epoch.index, epoch.coverage, epoch.quality_flags)
+```
+
+The same builder accepts live `MuseFrame` streams from `AmusedSource`; missing modalities
+are represented as coverage/quality flags instead of errors.
+
 > **Finally!** Direct BLE connection to Muse S without proprietary SDKs. We're quite *amused* that we cracked the protocol nobody else has published online!
 
 ## 🎉 The Real Story

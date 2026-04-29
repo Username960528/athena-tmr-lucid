@@ -28,6 +28,7 @@ def run_fast_tests():
         'tests.test_cli',
         'tests.test_recorder',
         'tests.test_replay',
+        'tests.test_epochs',
     ]
     
     for module in fast_modules:
