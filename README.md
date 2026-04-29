@@ -47,6 +47,43 @@ muse-tmr record --source amused --duration-hours 8
 ```
 
 Short smoke-test recordings require `--allow-short`; normal overnight recordings are constrained to 2-8 hours.
+Recordings are written to `data/recordings/<timestamp>/` by default. Pass `--output-dir`
+to pin a specific session directory.
+
+macOS BLE smoke-test note: if direct `python3 -m muse_tmr.cli.main discover --source amused`
+or `muse-tmr discover --source amused` aborts before printing Python logs, macOS TCC is
+likely blocking CoreBluetooth for the Python bundle. Use a virtual environment and launch
+the framework `Python.app` through LaunchServices:
+
+```bash
+cd /path/to/athena-tmr-lucid
+/opt/homebrew/bin/python3 -m venv .venv
+.venv/bin/python -m pip install -e .
+
+PYAPP=/opt/homebrew/Cellar/python@3.12/3.12.3/Frameworks/Python.framework/Versions/3.12/Resources/Python.app
+PYTHONPATH="$PWD:$PWD/src:$PWD/.venv/lib/python3.12/site-packages"
+
+open -W -n \
+  --stdout /tmp/muse-discover.out \
+  --stderr /tmp/muse-discover.err \
+  --env "PYTHONPATH=$PYTHONPATH" \
+  "$PYAPP" \
+  --args -m muse_tmr.cli.main discover --source amused
+
+cat /tmp/muse-discover.out
+cat /tmp/muse-discover.err
+```
+
+After discovery, prefer the discovered BLE address for live checks:
+
+```bash
+MUSE_ADDR="<discovered-address>"
+muse-tmr stream --source amused --address "$MUSE_ADDR" --duration-seconds 60
+muse-tmr record --source amused --address "$MUSE_ADDR" --duration-seconds 60 --allow-short
+```
+
+If using the `Python.app` workaround, keep the same `open ... "$PYAPP" --args` wrapper
+and replace only the command after `--args` with the `stream` or `record` invocation.
 
 > **Finally!** Direct BLE connection to Muse S without proprietary SDKs. We're quite *amused* that we cracked the protocol nobody else has published online!
 

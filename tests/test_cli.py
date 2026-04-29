@@ -1,6 +1,8 @@
 import unittest
+from pathlib import Path
+from unittest.mock import patch
 
-from muse_tmr.cli.main import build_parser
+from muse_tmr.cli.main import _default_recording_dir, _resolve_output_dir, build_parser
 from muse_tmr.sources.amused_source import AmusedSource
 
 
@@ -32,6 +34,23 @@ class TestCli(unittest.TestCase):
 
     def test_amused_source_import_does_not_cycle(self):
         self.assertEqual(AmusedSource.strategy, "forked-source")
+
+    def test_default_recording_dir_avoids_root_when_cwd_is_unusable(self):
+        with patch("muse_tmr.cli.main.Path.cwd", return_value=Path("/")):
+            output_dir = _default_recording_dir()
+
+        self.assertTrue(output_dir.is_absolute())
+        self.assertEqual(output_dir.parent.name, "recordings")
+        self.assertEqual(output_dir.parent.parent.name, "data")
+        self.assertNotEqual(output_dir.parent.parent.parent, Path("/"))
+
+    def test_relative_output_dir_avoids_root_when_cwd_is_unusable(self):
+        with patch("muse_tmr.cli.main.Path.cwd", return_value=Path("/")):
+            output_dir = _resolve_output_dir(Path("data/recordings/smoke"))
+
+        self.assertTrue(output_dir.is_absolute())
+        self.assertTrue(str(output_dir).endswith("data/recordings/smoke"))
+        self.assertFalse(str(output_dir).startswith("/data/"))
 
 
 if __name__ == "__main__":
