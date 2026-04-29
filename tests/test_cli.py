@@ -32,6 +32,24 @@ class TestCli(unittest.TestCase):
         self.assertEqual(args.command, "record")
         self.assertEqual(args.duration_hours, 8.0)
 
+    def test_replay_command_parses_time_range(self):
+        args = build_parser().parse_args([
+            "replay",
+            "data/recordings/session",
+            "--speed",
+            "10",
+            "--start-seconds",
+            "30",
+            "--end-seconds",
+            "90",
+        ])
+
+        self.assertEqual(args.command, "replay")
+        self.assertEqual(args.input, Path("data/recordings/session"))
+        self.assertEqual(args.speed, 10.0)
+        self.assertEqual(args.start_seconds, 30.0)
+        self.assertEqual(args.end_seconds, 90.0)
+
     def test_amused_source_import_does_not_cycle(self):
         self.assertEqual(AmusedSource.strategy, "forked-source")
 
