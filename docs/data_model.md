@@ -37,3 +37,20 @@ Replay speed is explicit:
 
 `start_seconds` and `end_seconds` are relative to the raw recording start, allowing
 feature code to replay a specific sleep segment without loading unrelated packets.
+
+## Sleep Epochs
+
+`muse_tmr.features.epochs.EpochBuilder` consumes any async stream of `MuseFrame`
+objects, including live `AmusedSource.stream()` and offline `ReplaySession.stream()`.
+The default configuration builds 30-second epochs with a 30-second stride. Strides
+of 5 or 10 seconds create overlapping windows for smoother downstream REM features.
+
+Each `SleepEpoch` contains:
+
+- `frames`: frames inside `[start_time, end_time)`.
+- `modality_counts`: number of frames carrying each modality.
+- `sample_counts`: estimated sample totals per modality.
+- `coverage`: observed samples divided by expected samples for EEG, IMU, PPG, and HR.
+- `quality_flags`: `missing_*` or `low_*_coverage` flags instead of exceptions.
+
+Default expected rates are EEG 256 Hz, IMU 52 Hz, PPG 64 Hz, and HR 1 Hz.
