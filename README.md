@@ -132,6 +132,27 @@ theta-alpha and slow-fast ratios, frontal/posterior asymmetry, a frontal
 eye-movement proxy, and artifact flags. CSV export is always available; Parquet export
 uses the installed pandas Parquet engine when available.
 
+M2 IMU motion/arousal feature extraction:
+
+```python
+from pathlib import Path
+from muse_tmr.features.imu_features import (
+    export_imu_feature_rows,
+    extract_imu_feature_rows,
+)
+
+rows = extract_imu_feature_rows(
+    epochs,
+    cue_timestamps_by_epoch={0: [session_start + 1800.0]},
+)
+export_imu_feature_rows(rows, Path("data/reports/imu_features.csv"))
+```
+
+IMU rows include motion level, stillness score, accelerometer and gyroscope peaks,
+movement events, arousal proxy counts, arousal guard reason codes, and cue-window
+movement logs. CSV export is always available; Parquet export uses the installed pandas
+Parquet engine when available.
+
 > **Finally!** Direct BLE connection to Muse S without proprietary SDKs. We're quite *amused* that we cracked the protocol nobody else has published online!
 
 ## 🎉 The Real Story
