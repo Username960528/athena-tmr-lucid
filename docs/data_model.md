@@ -72,3 +72,24 @@ Current EEG features include:
 
 Feature rows carry epoch timing, channel counts, sample counts, coverage, and quality
 flags so downstream REM detectors can filter noisy epochs before inference.
+
+## IMU Feature Rows
+
+`muse_tmr.features.imu_features.extract_imu_features()` converts one `SleepEpoch`
+into an `IMUFeatureRow`. `extract_imu_feature_rows()` handles an iterable of epochs,
+and `export_imu_feature_rows()` writes `.csv`, `.parquet`, or `.pq` through pandas.
+
+Current IMU features include:
+
+- dimensionless `motion_level` from accelerometer delta and gyroscope magnitude
+- `stillness_score` as the quiet sample fraction inside the epoch
+- accelerometer RMS/peak delta from the epoch baseline magnitude
+- gyroscope RMS/peak angular velocity
+- grouped movement events with duration, peak motion, and arousal-proxy flag
+- `arousal_guard_reason_codes` for downstream cue safety decisions
+- cue-window movement logs when cue timestamps are supplied per epoch
+- artifact flags for missing IMU, low coverage, missing axes, and non-finite values
+
+IMU rows preserve noisy epochs and expose guard reasons instead of dropping data.
+Future cue schedulers can turn `arousal_guard_reason_codes` into a `CueDecision`
+through `muse_tmr.protocol.tmr_scheduler.arousal_guard_decision()`.

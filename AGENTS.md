@@ -108,6 +108,9 @@ Prefer the existing simple module style until an issue explicitly introduces a p
   coverage plus quality flags for downstream EEG/IMU/PPG feature modules.
 - EEG features live in `muse_tmr.features.eeg_features`. Keep band-power tests synthetic
   with known sine waves, and preserve artifact flags rather than dropping noisy epochs.
+- IMU motion features live in `muse_tmr.features.imu_features`. Keep movement/arousal
+  tests synthetic with known accelerometer or gyroscope bursts, preserve noisy epochs,
+  and expose arousal guard reason codes rather than coupling features directly to audio.
 
 ## Testing Expectations
 
