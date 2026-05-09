@@ -31,6 +31,7 @@ def run_fast_tests():
         'tests.test_epochs',
         'tests.test_eeg_features',
         'tests.test_imu_features',
+        'tests.test_ppg_features',
     ]
     
     for module in fast_modules:

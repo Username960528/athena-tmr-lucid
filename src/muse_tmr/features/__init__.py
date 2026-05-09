@@ -17,6 +17,14 @@ from muse_tmr.features.imu_features import (
     extract_imu_feature_rows,
     extract_imu_features,
 )
+from muse_tmr.features.ppg_features import (
+    PPGFeatureConfig,
+    PPGFeatureRow,
+    SuddenHeartRateChange,
+    export_ppg_feature_rows,
+    extract_ppg_feature_rows,
+    extract_ppg_features,
+)
 
 __all__ = [
     "CueMovementLog",
@@ -27,11 +35,17 @@ __all__ = [
     "IMUFeatureConfig",
     "IMUFeatureRow",
     "MovementEvent",
+    "PPGFeatureConfig",
+    "PPGFeatureRow",
     "SleepEpoch",
+    "SuddenHeartRateChange",
     "export_eeg_feature_rows",
     "export_imu_feature_rows",
+    "export_ppg_feature_rows",
     "extract_eeg_feature_rows",
     "extract_eeg_features",
     "extract_imu_feature_rows",
     "extract_imu_features",
+    "extract_ppg_feature_rows",
+    "extract_ppg_features",
 ]

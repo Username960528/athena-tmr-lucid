@@ -93,3 +93,21 @@ Current IMU features include:
 IMU rows preserve noisy epochs and expose guard reasons instead of dropping data.
 Future cue schedulers can turn `arousal_guard_reason_codes` into a `CueDecision`
 through `muse_tmr.protocol.tmr_scheduler.arousal_guard_decision()`.
+
+## PPG/HR/HRV Feature Rows
+
+`muse_tmr.features.ppg_features.extract_ppg_features()` converts one `SleepEpoch`
+into a `PPGFeatureRow`. `extract_ppg_feature_rows()` handles an iterable of epochs,
+and `export_ppg_feature_rows()` writes `.csv`, `.parquet`, or `.pq` through pandas.
+
+Current PPG/HR features include:
+
+- PPG-derived heart-rate estimate from the strongest optics channel when raw PPG is present
+- mean, median, min, max, and trend for `HeartRateSample.bpm`
+- HRV proxy metrics: mean RR, SDNN, RMSSD, and pNN50
+- sudden HR-change logs from adjacent heart-rate samples
+- source fields showing whether HR/HRV came from PPG peaks, heart-rate samples, or missing data
+- artifact flags for missing PPG, low coverage, flatline, non-finite values, and out-of-range HR
+
+Raw PPG and heart-rate samples are optional. Missing modalities must produce flags and
+`NaN` feature values where needed, not exceptions.
