@@ -111,6 +111,9 @@ Prefer the existing simple module style until an issue explicitly introduces a p
 - IMU motion features live in `muse_tmr.features.imu_features`. Keep movement/arousal
   tests synthetic with known accelerometer or gyroscope bursts, preserve noisy epochs,
   and expose arousal guard reason codes rather than coupling features directly to audio.
+- PPG/HR/HRV features live in `muse_tmr.features.ppg_features`. Keep pulse/HR tests
+  synthetic and deterministic, treat PPG and heart-rate samples as independently
+  optional, and make HRV terminology explicit as a proxy until beat-level validation exists.
 
 ## Testing Expectations
 

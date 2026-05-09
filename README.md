@@ -153,6 +153,24 @@ movement events, arousal proxy counts, arousal guard reason codes, and cue-windo
 movement logs. CSV export is always available; Parquet export uses the installed pandas
 Parquet engine when available.
 
+M2 PPG/HR/HRV feature extraction:
+
+```python
+from pathlib import Path
+from muse_tmr.features.ppg_features import (
+    export_ppg_feature_rows,
+    extract_ppg_feature_rows,
+)
+
+rows = extract_ppg_feature_rows(epochs)
+export_ppg_feature_rows(rows, Path("data/reports/ppg_features.csv"))
+```
+
+PPG rows include PPG-derived heart-rate estimates when raw optics are available,
+mean/min/max HR from `HeartRateSample`, HR trend, HRV proxy metrics, sudden HR-change
+logs, and missing-modality flags. CSV export is always available; Parquet export uses
+the installed pandas Parquet engine when available.
+
 > **Finally!** Direct BLE connection to Muse S without proprietary SDKs. We're quite *amused* that we cracked the protocol nobody else has published online!
 
 ## 🎉 The Real Story
