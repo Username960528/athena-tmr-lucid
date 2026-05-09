@@ -54,3 +54,21 @@ Each `SleepEpoch` contains:
 - `quality_flags`: `missing_*` or `low_*_coverage` flags instead of exceptions.
 
 Default expected rates are EEG 256 Hz, IMU 52 Hz, PPG 64 Hz, and HR 1 Hz.
+
+## EEG Feature Rows
+
+`muse_tmr.features.eeg_features.extract_eeg_features()` converts one `SleepEpoch`
+into an `EEGFeatureRow`. `extract_eeg_feature_rows()` handles an iterable of epochs,
+and `export_eeg_feature_rows()` writes `.csv`, `.parquet`, or `.pq` through pandas.
+
+Current EEG features include:
+
+- absolute and relative band powers for delta, theta, alpha, beta, and gamma
+- theta/alpha, delta/beta, and slow/fast ratios
+- frontal and posterior alpha asymmetry
+- frontal theta asymmetry
+- a simple frontal eye-movement proxy from AF7-AF8 changes
+- artifact flags for missing EEG, low coverage, flatline, clipping, and non-finite channels
+
+Feature rows carry epoch timing, channel counts, sample counts, coverage, and quality
+flags so downstream REM detectors can filter noisy epochs before inference.

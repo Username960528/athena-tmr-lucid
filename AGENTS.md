@@ -106,6 +106,8 @@ Prefer the existing simple module style until an issue explicitly introduces a p
 - Use `muse_tmr.features.epochs.EpochBuilder` for 30-second sleep windows. It must accept
   both live source streams and replay streams, tolerate missing modalities, and expose
   coverage plus quality flags for downstream EEG/IMU/PPG feature modules.
+- EEG features live in `muse_tmr.features.eeg_features`. Keep band-power tests synthetic
+  with known sine waves, and preserve artifact flags rather than dropping noisy epochs.
 
 ## Testing Expectations
 
