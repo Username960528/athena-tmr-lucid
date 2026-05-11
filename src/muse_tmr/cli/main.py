@@ -62,6 +62,24 @@ def build_parser() -> argparse.ArgumentParser:
         help="Initial label for generated rows. Use unknown for manual labeling templates.",
     )
 
+    train_parser = subparsers.add_parser(
+        "train-rem-classifier",
+        help="Train a personal REM classifier from labeled annotation rows.",
+    )
+    train_parser.add_argument("annotations", type=Path, help="Input annotation .csv or .json path.")
+    train_parser.add_argument("--output", type=Path, required=True, help="Output model .json path.")
+    train_parser.add_argument(
+        "--feature",
+        action="append",
+        dest="features",
+        help="Feature column to use. Repeat to override the default feature set.",
+    )
+    train_parser.add_argument("--min-training-rows", type=int, default=4)
+    train_parser.add_argument("--epochs", type=int, default=1200)
+    train_parser.add_argument("--learning-rate", type=float, default=0.05)
+    train_parser.add_argument("--l2-penalty", type=float, default=0.01)
+    train_parser.add_argument("--threshold", type=float, default=0.5)
+
     record_parser = subparsers.add_parser("record", help="Record an overnight Muse session.")
     record_parser.add_argument("--source", choices=("amused",), default="amused")
     record_parser.add_argument("--address", help="Muse BLE address. If omitted, discovery is used.")
@@ -97,6 +115,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         return asyncio.run(_replay(args))
     if args.command == "annotate-template":
         return asyncio.run(_annotate_template(args))
+    if args.command == "train-rem-classifier":
+        return _train_rem_classifier(args)
     if args.command == "record":
         return asyncio.run(_record(args))
 
@@ -218,6 +238,44 @@ async def _annotate_template(args: argparse.Namespace) -> int:
     )
     output_path = export_rem_annotations(rows, _resolve_output_path(args.output))
     print(f"annotation template complete rows={len(rows)} output={output_path}")
+    return 0
+
+
+def _train_rem_classifier(args: argparse.Namespace) -> int:
+    from muse_tmr.annotations import load_rem_annotations
+    from muse_tmr.models import (
+        DEFAULT_PERSONAL_REM_FEATURES,
+        PersonalRemClassifierConfig,
+        train_personal_rem_classifier,
+    )
+
+    annotations = load_rem_annotations(_resolve_output_path(args.annotations))
+    feature_names = tuple(args.features) if args.features else DEFAULT_PERSONAL_REM_FEATURES
+    config = PersonalRemClassifierConfig(
+        feature_names=feature_names,
+        learning_rate=args.learning_rate,
+        epochs=args.epochs,
+        l2_penalty=args.l2_penalty,
+        decision_threshold=args.threshold,
+        min_training_rows=args.min_training_rows,
+    )
+    model = train_personal_rem_classifier(annotations, config=config)
+    output_path = model.save(_resolve_output_path(args.output))
+    summary = model.training_summary
+    metrics = summary.metrics if summary is not None else {}
+    group_metrics = summary.group_holdout_metrics if summary is not None else {}
+    print(
+        "personal REM classifier trained "
+        f"rows={summary.training_rows if summary else 0} "
+        f"positive={summary.positive_rows if summary else 0} "
+        f"negative={summary.negative_rows if summary else 0} "
+        f"skipped_unknown={summary.skipped_unknown_rows if summary else 0} "
+        f"accuracy={metrics.get('accuracy', 'nan')} "
+        f"balanced_accuracy={metrics.get('balanced_accuracy', 'nan')} "
+        f"brier={metrics.get('brier_score', 'nan')} "
+        f"group_holdout={group_metrics.get('status', 'nan')} "
+        f"output={output_path}"
+    )
     return 0
 
 

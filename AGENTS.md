@@ -121,6 +121,11 @@ Prefer the existing simple module style until an issue explicitly introduces a p
   `wake`, `nrem`, `probable_rem`, and `unknown`; generated annotation templates should
   default to `unknown`, overlay feature columns, and keep training export separate from
   raw personal recordings.
+- Personal REM classifier code lives in `muse_tmr.models.ml_rem_detector`. Train from
+  annotation rows, skip `unknown` labels by default, keep artifacts versioned and
+  loadable, and report imbalance/calibration/feature-importance metrics. Do not commit
+  private trained models or real annotation files unless the user explicitly asks and
+  confirms the data is shareable.
 
 ## Testing Expectations
 
