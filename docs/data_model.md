@@ -166,3 +166,25 @@ versioned JSON artifact with:
 `probable_rem` is the positive class. `wake` and `nrem` are negative classes.
 `unknown` rows are skipped. A loaded `PersonalRemModel` returns `RemPrediction` with
 `source="personal"` and remains separate from cue playback decisions.
+
+## REM Stable Gate
+
+`muse_tmr.models.rem_gate.StableRemGate` converts a stream of `RemPrediction` values
+into a stateful REM gate decision. The gate keeps REM detection separate from cue
+playback: it only emits `RemGateDecision`, never `CueDecision` or audio calls.
+
+Each decision contains:
+
+- `gate_open`: true only after stable REM confidence exceeds the entry threshold for
+  the configured stability window
+- `state`: `closed`, `warming`, `open`, or `blocked`
+- `confidence`: the original `P_REM`, capped confidence, active threshold, source, and
+  prediction reason codes
+- `stable_seconds`: consecutive stable REM time tracked by the gate
+- `cooldown_remaining_seconds`: remaining cooldown after motion/arousal blocks
+- `reason_codes`: threshold, stability, hysteresis, cooldown, and block reasons
+
+Default behavior uses an entry threshold of `0.70`, exit threshold of `0.45`, a
+60-second stability window, and a 120-second cooldown. Motion/arousal reason codes
+close the gate and start cooldown. Low feature-support reason codes cap confidence so
+single high-probability spikes do not open the gate by themselves.

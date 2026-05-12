@@ -211,6 +211,22 @@ includes class-balanced logistic coefficients, calibration metrics, feature impo
 and training metrics. Personal model probabilities still do not trigger audio directly;
 stable gates and safety layers decide whether a cue is allowed.
 
+M3 REM stable gate:
+
+```python
+from muse_tmr.models import RemGateConfig, StableRemGate
+
+gate = StableRemGate(RemGateConfig(min_stable_seconds=60.0))
+
+for prediction in rem_predictions:
+    decision = gate.update(prediction)
+    print(decision.gate_open, decision.state, decision.reason_codes)
+```
+
+The gate requires stable REM confidence over time, uses hysteresis for closing, blocks
+motion/arousal reasons, and applies cooldown after arousal blocks. It still does not
+play audio; M4/M5 cue code must consume `gate_open` plus reason codes.
+
 > **Finally!** Direct BLE connection to Muse S without proprietary SDKs. We're quite *amused* that we cracked the protocol nobody else has published online!
 
 ## 🎉 The Real Story

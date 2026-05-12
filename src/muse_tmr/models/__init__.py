@@ -8,6 +8,13 @@ from muse_tmr.models.ml_rem_detector import (
     PersonalRemTrainingSummary,
     train_personal_rem_classifier,
 )
+from muse_tmr.models.rem_gate import (
+    RemConfidence,
+    RemGateConfig,
+    RemGateDecision,
+    StableRemGate,
+    build_rem_confidence,
+)
 from muse_tmr.models.rem_detector import RemPrediction
 
 __all__ = [
@@ -17,6 +24,11 @@ __all__ = [
     "PersonalRemClassifierConfig",
     "PersonalRemModel",
     "PersonalRemTrainingSummary",
+    "RemConfidence",
+    "RemGateConfig",
+    "RemGateDecision",
     "RemPrediction",
+    "StableRemGate",
+    "build_rem_confidence",
     "train_personal_rem_classifier",
 ]
