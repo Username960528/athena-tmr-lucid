@@ -45,6 +45,7 @@ env/
 sleep_data/
 *.btsnoop
 data/recordings/
+data/calibration/
 data/raw/
 data/sleep/
 data/reports/

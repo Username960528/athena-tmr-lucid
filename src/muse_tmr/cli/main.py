@@ -6,6 +6,7 @@ import argparse
 import asyncio
 import datetime as dt
 import os
+import sys
 from pathlib import Path
 from typing import Optional, Sequence
 
@@ -90,6 +91,11 @@ def build_parser() -> argparse.ArgumentParser:
     play_parser.add_argument("--device-name")
     play_parser.add_argument("--log-path", type=Path)
     play_parser.add_argument(
+        "--calibration",
+        type=Path,
+        help="Volume calibration metadata .json. Uses --device-name when provided, else the latest record.",
+    )
+    play_parser.add_argument(
         "--backend",
         choices=("system", "afplay", "dry-run", "mock"),
         default="system",
@@ -99,6 +105,28 @@ def build_parser() -> argparse.ArgumentParser:
         "--emergency-stop",
         action="store_true",
         help="Trigger and log emergency stop instead of playing a cue.",
+    )
+
+    calibrate_parser = subparsers.add_parser(
+        "calibrate-volume",
+        help="Save pre-sleep volume calibration metadata for one playback device.",
+    )
+    calibrate_parser.add_argument("--device-name", required=True)
+    calibrate_parser.add_argument("--output", type=Path, required=True, help="Output calibration .json path.")
+    calibrate_parser.add_argument("--detectable-volume", type=float, required=True)
+    calibrate_parser.add_argument("--identifiable-volume", type=float, required=True)
+    calibrate_parser.add_argument("--comfortable-volume", type=float, required=True)
+    calibrate_parser.add_argument("--cue-id", default="test-cue")
+    calibrate_parser.add_argument(
+        "--backend",
+        choices=("system", "afplay", "dry-run", "mock"),
+        default="dry-run",
+    )
+    calibrate_parser.add_argument("--notes", default="")
+    calibrate_parser.add_argument(
+        "--replace",
+        action="store_true",
+        help="Replace the calibration file instead of appending/updating one device record.",
     )
 
     create_cues_parser = subparsers.add_parser(
@@ -162,6 +190,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         return _train_rem_classifier(args)
     if args.command == "play-test-cue":
         return _play_test_cue(args)
+    if args.command == "calibrate-volume":
+        return _calibrate_volume(args)
     if args.command == "create-cue-library":
         return _create_cue_library(args)
     if args.command == "validate-cue-library":
@@ -335,20 +365,33 @@ def _play_test_cue(args: argparse.Namespace) -> int:
         AudioCuePlayer,
         AudioPlaybackConfig,
         TestCue,
+        audio_config_with_calibration,
         create_audio_backend,
+        load_volume_calibrations,
     )
 
-    player = AudioCuePlayer(
-        AudioPlaybackConfig(
-            max_volume=args.max_volume,
-            default_volume=args.volume,
-            fade_in_seconds=args.fade_in_seconds,
-            fade_out_seconds=args.fade_out_seconds,
-            device_name=args.device_name,
-            log_path=_resolve_output_path(args.log_path) if args.log_path else None,
-        ),
-        backend=create_audio_backend(args.backend),
+    config = AudioPlaybackConfig(
+        max_volume=args.max_volume,
+        default_volume=args.volume,
+        fade_in_seconds=args.fade_in_seconds,
+        fade_out_seconds=args.fade_out_seconds,
+        device_name=args.device_name,
+        log_path=_resolve_output_path(args.log_path) if args.log_path else None,
     )
+    if args.calibration:
+        try:
+            store = load_volume_calibrations(_resolve_output_path(args.calibration))
+            calibration = (
+                store.latest_for_device(args.device_name)
+                if args.device_name
+                else store.latest()
+            )
+        except (FileNotFoundError, KeyError, ValueError) as exc:
+            print(f"volume calibration error: {exc}", file=sys.stderr)
+            return 1
+        config = audio_config_with_calibration(config, calibration)
+
+    player = AudioCuePlayer(config, backend=create_audio_backend(args.backend))
     if args.emergency_stop:
         result = player.emergency_stop()
     else:
@@ -370,6 +413,35 @@ def _play_test_cue(args: argparse.Namespace) -> int:
         f"reasons={','.join(result.reason_codes)}"
     )
     return 0 if result.status in {"played", "stopped", "skipped"} else 1
+
+
+def _calibrate_volume(args: argparse.Namespace) -> int:
+    from muse_tmr.audio import VolumeCalibration, save_volume_calibration
+
+    calibration = VolumeCalibration(
+        device_name=args.device_name,
+        detectable_volume=args.detectable_volume,
+        identifiable_volume=args.identifiable_volume,
+        comfortable_volume=args.comfortable_volume,
+        cue_id=args.cue_id,
+        backend_name=args.backend,
+        notes=args.notes,
+    )
+    output_path = save_volume_calibration(
+        calibration,
+        _resolve_output_path(args.output),
+        append=not args.replace,
+    )
+    print(
+        "volume calibration saved "
+        f"device={calibration.device_name} "
+        f"detectable={calibration.detectable_volume} "
+        f"identifiable={calibration.identifiable_volume} "
+        f"comfortable={calibration.comfortable_volume} "
+        f"scheduler_max={calibration.scheduler_max_volume} "
+        f"output={output_path}"
+    )
+    return 0
 
 
 def _create_cue_library(args: argparse.Namespace) -> int:

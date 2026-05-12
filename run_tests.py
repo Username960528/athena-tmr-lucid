@@ -28,6 +28,7 @@ def run_fast_tests():
         'tests.test_cli',
         'tests.test_audio_player',
         'tests.test_cue_library',
+        'tests.test_volume_calibration',
         'tests.test_recorder',
         'tests.test_replay',
         'tests.test_epochs',
@@ -38,6 +39,7 @@ def run_fast_tests():
         'tests.test_rem_annotations',
         'tests.test_personal_rem_classifier',
         'tests.test_rem_gate',
+        'tests.test_scheduler',
     ]
     
     for module in fast_modules:

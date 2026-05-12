@@ -135,6 +135,11 @@ Prefer the existing simple module style until an issue explicitly introduces a p
 - Cue library metadata lives in `muse_tmr.audio.cue_library`. Keep catalogs separate
   from private audio files, validate missing files before sessions, and do not commit
   real cue audio or private cue paths unless the user explicitly confirms they are safe.
+- Pre-sleep volume calibration lives in `muse_tmr.audio.volume_calibration`. Store
+  detectable, identifiable, and comfortable volumes per playback device, keep
+  calibration files out of git, and make scheduler code use the calibrated comfortable
+  volume as the max while still respecting a hard safety cap. Missing calibration
+  should block planned sleep-time cue sessions.
 
 ## Testing Expectations
 

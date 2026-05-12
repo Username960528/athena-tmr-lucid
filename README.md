@@ -239,6 +239,29 @@ JSONL playback logs with `--log-path`. On macOS the `system` backend uses `afpla
 when available; otherwise it falls back to `dry-run`. Use `--backend dry-run` for
 non-audible smoke tests and CI.
 
+M4 pre-sleep volume calibration:
+
+```bash
+muse-tmr calibrate-volume \
+  --device-name "Bedroom Headphones" \
+  --detectable-volume 0.02 \
+  --identifiable-volume 0.04 \
+  --comfortable-volume 0.08 \
+  --output data/calibration/volume.json
+
+muse-tmr play-test-cue \
+  --backend dry-run \
+  --device-name "Bedroom Headphones" \
+  --calibration data/calibration/volume.json \
+  --volume 0.20
+```
+
+Volume calibration stores the detectable, identifiable, and comfortable volumes for
+one playback device. Scheduler code must use `comfortable_volume` as the calibrated
+maximum, still capped by the hard session max. Calibration files under
+`data/calibration/` are gitignored because they can reveal personal devices and
+sleep setup.
+
 M4 cue library metadata:
 
 ```bash
