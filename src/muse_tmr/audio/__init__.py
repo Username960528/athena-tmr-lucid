@@ -27,6 +27,15 @@ from muse_tmr.audio.cue_library import (
     resolve_cue_path,
     validate_cue_library_file,
 )
+from muse_tmr.audio.volume_calibration import (
+    VOLUME_CALIBRATION_SCHEMA_VERSION,
+    VolumeCalibration,
+    VolumeCalibrationStore,
+    audio_config_with_calibration,
+    calibrated_max_volume,
+    load_volume_calibrations,
+    save_volume_calibration,
+)
 
 __all__ = [
     "AudioBackend",
@@ -46,10 +55,17 @@ __all__ = [
     "CueLibraryValidationIssue",
     "CueLibraryValidationReport",
     "CueMetadata",
+    "VOLUME_CALIBRATION_SCHEMA_VERSION",
+    "VolumeCalibration",
+    "VolumeCalibrationStore",
+    "audio_config_with_calibration",
+    "calibrated_max_volume",
     "create_audio_backend",
     "default_cue_library",
     "export_cue_library",
+    "load_volume_calibrations",
     "load_cue_library",
     "resolve_cue_path",
+    "save_volume_calibration",
     "validate_cue_library_file",
 ]

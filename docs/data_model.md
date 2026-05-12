@@ -209,6 +209,26 @@ can be appended to a JSONL log. The default `system` backend uses macOS `afplay`
 available and otherwise falls back to `dry-run`; tests use `MockAudioBackend` so CI does
 not need an audio device.
 
+## Volume Calibration
+
+`muse_tmr.audio.volume_calibration.VolumeCalibration` stores the pre-sleep audible
+thresholds for one playback device:
+
+- `detectable_volume`: lowest volume the subject can notice
+- `identifiable_volume`: lowest volume the subject can recognize as the intended cue
+- `comfortable_volume`: highest volume accepted for sleep-time scheduling
+- cue/backend metadata, timestamp, and optional notes
+
+`VolumeCalibrationStore` writes versioned JSON metadata with a `calibrations` array.
+Saving a new calibration for the same `device_name` replaces the prior record for that
+device while preserving other devices. `muse-tmr calibrate-volume --output <file>`
+creates or updates this metadata.
+
+Scheduler-facing code should use `comfortable_volume` through
+`calibrated_max_volume()` or `calibrated_cue_decision()`. The resulting max remains
+bounded by the configured hard cap, and missing calibration should block planned
+sleep-time cue sessions rather than falling back to an unverified speaker level.
+
 ## Cue Libraries
 
 `muse_tmr.audio.cue_library.CueLibrary` stores cue metadata in JSON without committing
