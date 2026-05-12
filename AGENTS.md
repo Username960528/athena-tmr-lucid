@@ -126,6 +126,9 @@ Prefer the existing simple module style until an issue explicitly introduces a p
   loadable, and report imbalance/calibration/feature-importance metrics. Do not commit
   private trained models or real annotation files unless the user explicitly asks and
   confirms the data is shareable.
+- REM confidence and stable gate code lives in `muse_tmr.models.rem_gate`. Keep it
+  stateful, deterministic, replay-testable, and separate from audio. Gate decisions may
+  expose `gate_open` and block reasons, but must not expose cue playback decisions.
 
 ## Testing Expectations
 
