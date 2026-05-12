@@ -147,3 +147,22 @@ codes, normalized feature scores, and raw feature values. The default label is
 
 `load_rem_annotations()` validates labels from CSV or JSON. `rem_training_rows()`
 returns training-ready rows and excludes `unknown` labels by default.
+
+## Personal REM Models
+
+`muse_tmr.models.ml_rem_detector` trains a personal REM classifier from labeled
+annotation rows. The default model is a small class-balanced logistic classifier over
+the annotation feature columns, so it stays dependency-light and can be trained from
+manually labeled nights.
+
+`muse-tmr train-rem-classifier <labels.csv|labels.json> --output <model.json>` writes a
+versioned JSON artifact with:
+
+- feature names, means, scales, coefficients, and calibration intercept
+- feature importance based on normalized coefficient magnitude
+- training metrics, Brier/log-loss calibration metrics, and calibration bins
+- optional leave-one-recording-out metrics when multiple recording IDs are present
+
+`probable_rem` is the positive class. `wake` and `nrem` are negative classes.
+`unknown` rows are skipped. A loaded `PersonalRemModel` returns `RemPrediction` with
+`source="personal"` and remains separate from cue playback decisions.

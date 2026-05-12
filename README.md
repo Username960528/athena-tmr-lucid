@@ -198,6 +198,19 @@ The template overlays each epoch with `P_REM`, reason codes, and feature columns
 default label is `unknown`; manually edit labels to `wake`, `nrem`, or `probable_rem`
 before using them for training.
 
+M3 personal REM classifier:
+
+```bash
+muse-tmr train-rem-classifier data/annotations/<session>_rem_labels.csv \
+  --output data/models/personal_rem_model.json
+```
+
+The trainer skips `unknown` labels, treats `probable_rem` as the positive class, and
+treats `wake`/`nrem` as the negative class. The saved JSON artifact is versioned and
+includes class-balanced logistic coefficients, calibration metrics, feature importance,
+and training metrics. Personal model probabilities still do not trigger audio directly;
+stable gates and safety layers decide whether a cue is allowed.
+
 > **Finally!** Direct BLE connection to Muse S without proprietary SDKs. We're quite *amused* that we cracked the protocol nobody else has published online!
 
 ## 🎉 The Real Story

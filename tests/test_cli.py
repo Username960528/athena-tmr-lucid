@@ -71,6 +71,29 @@ class TestCli(unittest.TestCase):
         self.assertEqual(args.epoch_seconds, 30.0)
         self.assertEqual(args.stride_seconds, 10.0)
 
+    def test_train_rem_classifier_command_parses_model_options(self):
+        args = build_parser().parse_args([
+            "train-rem-classifier",
+            "data/annotations/session.csv",
+            "--output",
+            "data/models/personal_rem_model.json",
+            "--feature",
+            "p_rem",
+            "--feature",
+            "feature_score_stillness",
+            "--epochs",
+            "500",
+            "--threshold",
+            "0.6",
+        ])
+
+        self.assertEqual(args.command, "train-rem-classifier")
+        self.assertEqual(args.annotations, Path("data/annotations/session.csv"))
+        self.assertEqual(args.output, Path("data/models/personal_rem_model.json"))
+        self.assertEqual(args.features, ["p_rem", "feature_score_stillness"])
+        self.assertEqual(args.epochs, 500)
+        self.assertEqual(args.threshold, 0.6)
+
     def test_amused_source_import_does_not_cycle(self):
         self.assertEqual(AmusedSource.strategy, "forked-source")
 
