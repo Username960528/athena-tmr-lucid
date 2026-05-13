@@ -1,0 +1,339 @@
+"""Conservative arousal guard over sleep feature rows."""
+
+from __future__ import annotations
+
+import json
+import math
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Dict, Iterable, Mapping, Optional, Tuple
+
+from muse_tmr.features.eeg_features import EEGFeatureRow
+from muse_tmr.features.imu_features import IMUFeatureRow
+from muse_tmr.features.ppg_features import PPGFeatureRow
+
+AROUSAL_GUARD_ACTIONS = ("allow", "lower_volume", "pause", "stop")
+
+PAUSE_IMU_REASON_CODES = (
+    "motion_arousal_proxy",
+    "cue_related_arousal",
+    "motion_not_still",
+)
+
+
+@dataclass(frozen=True)
+class ArousalGuardConfig:
+    enabled: bool = True
+    lower_volume_multiplier: float = 0.50
+    pause_seconds: float = 120.0
+    stop_after_consecutive_pause_epochs: int = 3
+    stop_after_consecutive_artifact_epochs: int = 3
+    min_stillness_score_for_cue: float = 0.90
+    alpha_lower_volume_relative_power: float = 0.25
+    alpha_pause_relative_power: float = 0.40
+    sudden_hr_change_pause_count: int = 1
+    sudden_hr_change_pause_bpm: float = 10.0
+
+    def validate(self) -> None:
+        if not 0.0 < self.lower_volume_multiplier <= 1.0:
+            raise ValueError("lower_volume_multiplier must be inside (0, 1]")
+        if self.pause_seconds < 0:
+            raise ValueError("pause_seconds must be non-negative")
+        if self.stop_after_consecutive_pause_epochs <= 0:
+            raise ValueError("stop_after_consecutive_pause_epochs must be positive")
+        if self.stop_after_consecutive_artifact_epochs <= 0:
+            raise ValueError("stop_after_consecutive_artifact_epochs must be positive")
+        if not 0.0 <= self.min_stillness_score_for_cue <= 1.0:
+            raise ValueError("min_stillness_score_for_cue must be between 0 and 1")
+        if not (
+            0.0
+            <= self.alpha_lower_volume_relative_power
+            <= self.alpha_pause_relative_power
+            <= 1.0
+        ):
+            raise ValueError("alpha thresholds must satisfy 0 <= lower <= pause <= 1")
+        if self.sudden_hr_change_pause_count <= 0:
+            raise ValueError("sudden_hr_change_pause_count must be positive")
+        if self.sudden_hr_change_pause_bpm <= 0:
+            raise ValueError("sudden_hr_change_pause_bpm must be positive")
+
+
+@dataclass(frozen=True)
+class ArousalGuardDecision:
+    action: str
+    timestamp_seconds: float
+    reason_codes: Tuple[str, ...] = ()
+    volume_multiplier: float = 1.0
+    pause_seconds: float = 0.0
+    metadata: Mapping[str, object] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        if self.action not in AROUSAL_GUARD_ACTIONS:
+            raise ValueError(f"action must be one of: {', '.join(AROUSAL_GUARD_ACTIONS)}")
+        if self.timestamp_seconds < 0:
+            raise ValueError("timestamp_seconds must be non-negative")
+        if not 0.0 <= self.volume_multiplier <= 1.0:
+            raise ValueError("volume_multiplier must be between 0 and 1")
+        if self.pause_seconds < 0:
+            raise ValueError("pause_seconds must be non-negative")
+        object.__setattr__(self, "reason_codes", _unique(self.reason_codes))
+
+    @property
+    def should_lower_volume(self) -> bool:
+        return self.action == "lower_volume"
+
+    @property
+    def should_pause(self) -> bool:
+        return self.action == "pause"
+
+    @property
+    def should_stop(self) -> bool:
+        return self.action == "stop"
+
+    def to_dict(self) -> Dict[str, object]:
+        return {
+            "action": self.action,
+            "timestamp_seconds": self.timestamp_seconds,
+            "reason_codes": list(self.reason_codes),
+            "volume_multiplier": self.volume_multiplier,
+            "pause_seconds": self.pause_seconds,
+            "metadata": dict(self.metadata),
+        }
+
+    @classmethod
+    def from_dict(cls, payload: Mapping[str, object]) -> "ArousalGuardDecision":
+        return cls(
+            action=str(payload["action"]),
+            timestamp_seconds=float(payload["timestamp_seconds"]),
+            reason_codes=tuple(str(item) for item in payload.get("reason_codes", ())),
+            volume_multiplier=float(payload.get("volume_multiplier", 1.0)),
+            pause_seconds=float(payload.get("pause_seconds", 0.0)),
+            metadata=dict(payload.get("metadata", {}) or {}),
+        )
+
+
+class ArousalGuard:
+    """Stateful cue safety guard over motion, alpha, HR, and artifact proxies."""
+
+    def __init__(
+        self,
+        config: Optional[ArousalGuardConfig] = None,
+        *,
+        event_log_path: Optional[Path] = None,
+    ) -> None:
+        self.config = config or ArousalGuardConfig()
+        self.config.validate()
+        self.event_log_path = event_log_path
+        self._consecutive_pause_epochs = 0
+        self._consecutive_artifact_epochs = 0
+
+    @property
+    def consecutive_pause_epochs(self) -> int:
+        return self._consecutive_pause_epochs
+
+    @property
+    def consecutive_artifact_epochs(self) -> int:
+        return self._consecutive_artifact_epochs
+
+    def reset(self) -> None:
+        self._consecutive_pause_epochs = 0
+        self._consecutive_artifact_epochs = 0
+
+    def evaluate(
+        self,
+        *,
+        timestamp_seconds: float,
+        eeg: Optional[EEGFeatureRow] = None,
+        imu: Optional[IMUFeatureRow] = None,
+        ppg: Optional[PPGFeatureRow] = None,
+    ) -> ArousalGuardDecision:
+        if timestamp_seconds < 0:
+            raise ValueError("timestamp_seconds must be non-negative")
+
+        if not self.config.enabled:
+            return self._record(
+                ArousalGuardDecision(
+                    action="allow",
+                    timestamp_seconds=timestamp_seconds,
+                    metadata={"enabled": False},
+                )
+            )
+
+        lower_reasons = []
+        pause_reasons = []
+        artifact_reasons = []
+        metadata: Dict[str, object] = {}
+
+        self._collect_imu_reasons(imu, lower_reasons, pause_reasons, artifact_reasons, metadata)
+        self._collect_eeg_reasons(eeg, lower_reasons, pause_reasons, artifact_reasons, metadata)
+        self._collect_ppg_reasons(ppg, lower_reasons, pause_reasons, artifact_reasons, metadata)
+
+        artifact_present = bool(artifact_reasons)
+        pause_present = bool(pause_reasons)
+        self._consecutive_artifact_epochs = (
+            self._consecutive_artifact_epochs + 1 if artifact_present else 0
+        )
+        self._consecutive_pause_epochs = (
+            self._consecutive_pause_epochs + 1 if pause_present else 0
+        )
+        metadata["consecutive_artifact_epochs"] = self._consecutive_artifact_epochs
+        metadata["consecutive_pause_epochs"] = self._consecutive_pause_epochs
+
+        stop_reasons = []
+        if self._consecutive_pause_epochs >= self.config.stop_after_consecutive_pause_epochs:
+            stop_reasons.append("repeated_arousal_guard_pause")
+        if self._consecutive_artifact_epochs >= self.config.stop_after_consecutive_artifact_epochs:
+            stop_reasons.append("repeated_artifact_quality")
+
+        if stop_reasons:
+            return self._record(
+                ArousalGuardDecision(
+                    action="stop",
+                    timestamp_seconds=timestamp_seconds,
+                    reason_codes=_unique(
+                        stop_reasons + pause_reasons + lower_reasons + artifact_reasons
+                    ),
+                    volume_multiplier=0.0,
+                    metadata=metadata,
+                )
+            )
+        if pause_reasons:
+            return self._record(
+                ArousalGuardDecision(
+                    action="pause",
+                    timestamp_seconds=timestamp_seconds,
+                    reason_codes=_unique(pause_reasons + lower_reasons + artifact_reasons),
+                    volume_multiplier=0.0,
+                    pause_seconds=self.config.pause_seconds,
+                    metadata=metadata,
+                )
+            )
+        if lower_reasons or artifact_reasons:
+            return self._record(
+                ArousalGuardDecision(
+                    action="lower_volume",
+                    timestamp_seconds=timestamp_seconds,
+                    reason_codes=_unique(lower_reasons + artifact_reasons),
+                    volume_multiplier=self.config.lower_volume_multiplier,
+                    metadata=metadata,
+                )
+            )
+        return self._record(ArousalGuardDecision(action="allow", timestamp_seconds=timestamp_seconds))
+
+    def _collect_imu_reasons(
+        self,
+        imu: Optional[IMUFeatureRow],
+        lower_reasons: list,
+        pause_reasons: list,
+        artifact_reasons: list,
+        metadata: Dict[str, object],
+    ) -> None:
+        if imu is None:
+            return
+        metadata["stillness_score"] = imu.stillness_score
+        metadata["motion_level"] = imu.motion_level
+        metadata["arousal_event_count"] = imu.arousal_event_count
+        metadata["cue_related_arousal_count"] = imu.cue_related_arousal_count
+
+        for reason in imu.arousal_guard_reason_codes:
+            if reason in PAUSE_IMU_REASON_CODES:
+                pause_reasons.append(reason)
+            else:
+                lower_reasons.append(reason)
+        if (
+            math.isfinite(imu.stillness_score)
+            and imu.stillness_score < self.config.min_stillness_score_for_cue
+        ):
+            pause_reasons.append("motion_not_still")
+        if imu.cue_related_arousal_count > 0:
+            pause_reasons.append("cue_related_arousal")
+        if imu.artifact_flags:
+            artifact_reasons.append("imu_artifact_flags")
+            metadata["imu_artifact_flags"] = list(imu.artifact_flags)
+
+    def _collect_eeg_reasons(
+        self,
+        eeg: Optional[EEGFeatureRow],
+        lower_reasons: list,
+        pause_reasons: list,
+        artifact_reasons: list,
+        metadata: Dict[str, object],
+    ) -> None:
+        if eeg is None:
+            return
+        alpha_power = float(eeg.relative_band_powers.get("alpha", math.nan))
+        metadata["relative_alpha_power"] = alpha_power
+        metadata["eeg_coverage"] = eeg.eeg_coverage
+        if math.isfinite(alpha_power):
+            if alpha_power >= self.config.alpha_pause_relative_power:
+                pause_reasons.append("alpha_arousal_proxy")
+            elif alpha_power >= self.config.alpha_lower_volume_relative_power:
+                lower_reasons.append("alpha_arousal_proxy_mild")
+        if eeg.artifact_flags:
+            artifact_reasons.append("eeg_artifact_flags")
+            metadata["eeg_artifact_flags"] = list(eeg.artifact_flags)
+        if "low_eeg_coverage" in eeg.artifact_flags or "low_eeg_coverage" in eeg.quality_flags:
+            lower_reasons.append("low_eeg_coverage")
+
+    def _collect_ppg_reasons(
+        self,
+        ppg: Optional[PPGFeatureRow],
+        lower_reasons: list,
+        pause_reasons: list,
+        artifact_reasons: list,
+        metadata: Dict[str, object],
+    ) -> None:
+        if ppg is None:
+            return
+        metadata["sudden_hr_change_count"] = ppg.sudden_hr_change_count
+        metadata["max_sudden_hr_change_bpm"] = ppg.max_sudden_hr_change_bpm
+        metadata["ppg_coverage"] = ppg.ppg_coverage
+        metadata["heart_rate_coverage"] = ppg.heart_rate_coverage
+
+        if (
+            ppg.sudden_hr_change_count >= self.config.sudden_hr_change_pause_count
+            or (
+                math.isfinite(ppg.max_sudden_hr_change_bpm)
+                and ppg.max_sudden_hr_change_bpm >= self.config.sudden_hr_change_pause_bpm
+            )
+        ):
+            pause_reasons.append("sudden_heart_rate_change")
+        if "heart_rate_out_of_range" in ppg.artifact_flags:
+            pause_reasons.append("heart_rate_out_of_range")
+        if ppg.artifact_flags:
+            artifact_reasons.append("ppg_artifact_flags")
+            metadata["ppg_artifact_flags"] = list(ppg.artifact_flags)
+        if "low_ppg_coverage" in ppg.artifact_flags or "low_heart_rate_coverage" in ppg.artifact_flags:
+            lower_reasons.append("low_ppg_hr_coverage")
+
+    def _record(self, decision: ArousalGuardDecision) -> ArousalGuardDecision:
+        if self.event_log_path is not None:
+            append_arousal_guard_decisions((decision,), self.event_log_path)
+        return decision
+
+
+def append_arousal_guard_decisions(
+    decisions: Iterable[ArousalGuardDecision],
+    output_path: Path,
+) -> Path:
+    output_path = output_path.expanduser()
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    with output_path.open("a", encoding="utf-8") as handle:
+        for decision in decisions:
+            handle.write(json.dumps(decision.to_dict(), sort_keys=True) + "\n")
+    return output_path
+
+
+def load_arousal_guard_decisions(input_path: Path) -> Tuple[ArousalGuardDecision, ...]:
+    input_path = input_path.expanduser()
+    if not input_path.exists():
+        return ()
+    return tuple(
+        ArousalGuardDecision.from_dict(json.loads(line))
+        for line in input_path.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    )
+
+
+def _unique(reason_codes: Iterable[str]) -> Tuple[str, ...]:
+    return tuple(dict.fromkeys(code for code in reason_codes if code))

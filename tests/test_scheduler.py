@@ -5,6 +5,7 @@ from pathlib import Path
 from muse_tmr.audio import CueLibrary, CueMetadata, VolumeCalibration
 from muse_tmr.models import RemConfidence, RemGateDecision
 from muse_tmr.protocol import (
+    ArousalGuardDecision,
     PuzzleCatalog,
     PuzzleCueAssignment,
     PuzzleTask,
@@ -183,6 +184,71 @@ class TestTmrCueScheduler(unittest.TestCase):
         self.assertIn("arousal_guard_blocked", event.reason_codes)
         self.assertEqual(len([item for item in scheduler.events if item.event_type == "play"]), 0)
 
+    def test_lower_volume_guard_scales_play_volume_hint(self):
+        scheduler = _scheduler(tlr_block_plan=None)
+        guard_decision = ArousalGuardDecision(
+            action="lower_volume",
+            timestamp_seconds=0.0,
+            reason_codes=("alpha_arousal_proxy_mild",),
+            volume_multiplier=0.5,
+        )
+
+        event = scheduler.update(
+            _gate_open(),
+            timestamp_seconds=0.0,
+            guard_decision=guard_decision,
+        )[0]
+
+        self.assertEqual(event.event_type, "play")
+        self.assertEqual(event.metadata["arousal_guard_action"], "lower_volume")
+        self.assertEqual(event.metadata["original_volume_hint"], 0.10)
+        self.assertAlmostEqual(event.metadata["volume_hint"], 0.05)
+
+    def test_pause_guard_pauses_cueing_and_starts_cooldown(self):
+        scheduler = _scheduler(tlr_block_plan=None)
+        guard_decision = ArousalGuardDecision(
+            action="pause",
+            timestamp_seconds=0.0,
+            reason_codes=("motion_arousal_proxy",),
+            pause_seconds=45.0,
+        )
+
+        pause = scheduler.update(
+            _gate_open(),
+            timestamp_seconds=0.0,
+            guard_decision=guard_decision,
+        )[0]
+        cooldown = scheduler.update(_gate_open(), timestamp_seconds=10.0)[0]
+
+        self.assertEqual(pause.event_type, "pause")
+        self.assertIn("arousal_guard_pause", pause.reason_codes)
+        self.assertIn("motion_arousal_proxy", pause.reason_codes)
+        self.assertEqual(pause.metadata["cooldown_until_seconds"], 45.0)
+        self.assertEqual(cooldown.event_type, "skip")
+        self.assertIn("scheduler_cooldown_active", cooldown.reason_codes)
+
+    def test_stop_guard_logs_stop_and_blocks_future_updates(self):
+        scheduler = _scheduler(tlr_block_plan=None)
+        guard_decision = ArousalGuardDecision(
+            action="stop",
+            timestamp_seconds=0.0,
+            reason_codes=("repeated_arousal_guard_pause",),
+            volume_multiplier=0.0,
+        )
+
+        stop = scheduler.update(
+            _gate_open(),
+            timestamp_seconds=0.0,
+            guard_decision=guard_decision,
+        )[0]
+        after = scheduler.update(_gate_open(), timestamp_seconds=5.0)[0]
+
+        self.assertEqual(stop.event_type, "stop")
+        self.assertIn("arousal_guard_stop", stop.reason_codes)
+        self.assertIn("repeated_arousal_guard_pause", stop.reason_codes)
+        self.assertEqual(after.event_type, "skip")
+        self.assertIn("scheduler_stopped", after.reason_codes)
+
     def test_stop_logs_stop_and_blocks_future_updates(self):
         scheduler = _scheduler(tlr_block_plan=None)
 
@@ -230,6 +296,7 @@ def _scheduler(config=None, tlr_block_plan=None, event_log_path=None):
                 protocol="puzzle",
                 duration_seconds=1.0,
                 frequency_hz=528.0,
+                volume_hint=0.10,
             ),
             CueMetadata(
                 cue_id="cue-p2",
@@ -237,6 +304,7 @@ def _scheduler(config=None, tlr_block_plan=None, event_log_path=None):
                 protocol="puzzle",
                 duration_seconds=1.0,
                 frequency_hz=530.0,
+                volume_hint=0.10,
             ),
             CueMetadata(
                 cue_id="cue-p3",
@@ -244,6 +312,7 @@ def _scheduler(config=None, tlr_block_plan=None, event_log_path=None):
                 protocol="puzzle",
                 duration_seconds=1.0,
                 frequency_hz=532.0,
+                volume_hint=0.10,
             ),
             CueMetadata(
                 cue_id="cue-p4",
@@ -251,6 +320,7 @@ def _scheduler(config=None, tlr_block_plan=None, event_log_path=None):
                 protocol="puzzle",
                 duration_seconds=1.0,
                 frequency_hz=534.0,
+                volume_hint=0.10,
             ),
             default_tlr_cue(),
         )

@@ -338,7 +338,9 @@ future REM-gated scheduler code should run before puzzle cues.
 M5 REM-gated scheduler:
 
 ```python
-from muse_tmr.protocol import TmrCueScheduler, TmrSchedulerConfig
+from muse_tmr.protocol import ArousalGuard, TmrCueScheduler, TmrSchedulerConfig
+
+guard = ArousalGuard()
 
 scheduler = TmrCueScheduler(
     assignment=puzzle_cue_assignment,
@@ -348,14 +350,26 @@ scheduler = TmrCueScheduler(
     config=TmrSchedulerConfig(max_puzzle_cues_per_block=4),
 )
 
-for timestamp_seconds, gate_decision in replayed_gate_decisions:
-    events = scheduler.update(gate_decision, timestamp_seconds=timestamp_seconds)
+for timestamp_seconds, gate_decision, feature_rows in replayed_gate_decisions:
+    guard_decision = guard.evaluate(
+        timestamp_seconds=timestamp_seconds,
+        eeg=feature_rows.eeg,
+        imu=feature_rows.imu,
+        ppg=feature_rows.ppg,
+    )
+    events = scheduler.update(
+        gate_decision,
+        timestamp_seconds=timestamp_seconds,
+        guard_decision=guard_decision,
+    )
 ```
 
 The scheduler consumes stable REM gate decisions, optionally emits a TLR block first,
 then schedules only cued puzzle cues from `scheduled_puzzle_ids`. It enforces
 cue interval, cooldown, and max-per-block limits, and logs structured `play`, `skip`,
-`pause`, and `stop` events. It does not call audio playback directly.
+`pause`, and `stop` events. `ArousalGuard` consumes EEG/IMU/PPG feature rows and can
+allow cueing, lower volume, pause cueing, or stop a session from motion, alpha, HR-jump,
+and artifact-quality proxies. Neither layer calls audio playback directly.
 
 > **Finally!** Direct BLE connection to Muse S without proprietary SDKs. We're quite *amused* that we cracked the protocol nobody else has published online!
 

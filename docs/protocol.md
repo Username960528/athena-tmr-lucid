@@ -83,6 +83,24 @@ reason codes, and metadata. Tests replay synthetic REM gate decisions to verify 
 ordering, puzzle-cue intervals, cooldown, max-per-block behavior, and the rule that
 uncued controls are never scheduled.
 
+## Arousal Guard
+
+`muse_tmr.protocol.arousal_guard.ArousalGuard` is the cue safety layer between feature
+extraction and `TmrCueScheduler`. It consumes `EEGFeatureRow`, `IMUFeatureRow`, and
+`PPGFeatureRow` objects and emits an `ArousalGuardDecision` with one action:
+
+- `allow`
+- `lower_volume`
+- `pause`
+- `stop`
+
+The conservative default watches motion/arousal guard reason codes, stillness, relative
+alpha power, sudden HR changes, out-of-range HR, and artifact/coverage flags. Mild alpha
+or artifact-quality concerns lower volume. Motion arousal, low stillness, strong alpha,
+HR jumps, and out-of-range HR pause cueing. Repeated pause or artifact epochs stop the
+session plan. Decisions can be appended to JSONL for replay analysis and passed into
+`TmrCueScheduler.update(..., guard_decision=decision)`.
+
 Association checks compare a remembered response with the expected solution using a
 case-insensitive whitespace-normalized match and append the result to the night session
 metadata.

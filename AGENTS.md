@@ -157,6 +157,10 @@ Prefer the existing simple module style until an issue explicitly introduces a p
   never schedule uncued puzzles. Keep it deterministic and replay-testable, log
   `play`, `skip`, `pause`, and `stop` events, and do not call real audio playback inside
   the scheduler.
+- Arousal guard logic lives in `muse_tmr.protocol.arousal_guard`. Keep it feature-row
+  based, configurable, conservative by default, and replay-testable. It may return
+  `allow`, `lower_volume`, `pause`, or `stop` decisions from motion, alpha, HR-jump,
+  and artifact-quality proxies, but it must not play audio directly.
 
 ## Testing Expectations
 

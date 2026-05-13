@@ -39,6 +39,7 @@ def run_fast_tests():
         'tests.test_rem_annotations',
         'tests.test_personal_rem_classifier',
         'tests.test_rem_gate',
+        'tests.test_arousal_guard',
         'tests.test_scheduler',
         'tests.test_puzzle_protocol',
         'tests.test_tlr_protocol',

@@ -9,6 +9,7 @@ from typing import Dict, Iterable, Mapping, Optional, Tuple
 
 from muse_tmr.audio import CueLibrary, VolumeCalibration, calibrated_max_volume
 from muse_tmr.models import RemGateDecision
+from muse_tmr.protocol.arousal_guard import ArousalGuardDecision
 from muse_tmr.protocol.puzzle_protocol import PuzzleCatalog
 from muse_tmr.protocol.randomization import PuzzleCueAssignment
 from muse_tmr.protocol.tlr_protocol import TlrBlockPlan
@@ -170,6 +171,7 @@ class TmrCueScheduler:
         *,
         timestamp_seconds: float,
         reason_codes: Iterable[str] = (),
+        guard_decision: Optional[ArousalGuardDecision] = None,
     ) -> Tuple[TmrSchedulerEvent, ...]:
         if timestamp_seconds < 0:
             raise ValueError("timestamp_seconds must be non-negative")
@@ -177,9 +179,14 @@ class TmrCueScheduler:
         if self._stopped:
             return (self._emit_skip(timestamp_seconds, ("scheduler_stopped",)),)
 
+        guard_event = self._apply_guard_decision(guard_decision, timestamp_seconds)
+        if guard_event is not None:
+            return (guard_event,)
+
         if not gate_decision.gate_open:
             return (self._handle_closed_gate(gate_decision, timestamp_seconds),)
 
+        volume_context = _guard_volume_context(guard_decision)
         guard_reasons = _unique(reason_codes)
         if guard_reasons:
             return (self._emit_skip(timestamp_seconds, guard_reasons),)
@@ -196,7 +203,7 @@ class TmrCueScheduler:
         if not self._active_block:
             self._start_rem_block(timestamp_seconds)
 
-        tlr_events = self._maybe_emit_tlr_block(timestamp_seconds)
+        tlr_events = self._maybe_emit_tlr_block(timestamp_seconds, volume_context)
         if tlr_events:
             return tlr_events
 
@@ -222,7 +229,7 @@ class TmrCueScheduler:
         if self._next_puzzle_index >= len(self._scheduled_puzzles):
             return (self._emit_skip(timestamp_seconds, ("no_cued_puzzles_remaining",)),)
 
-        return (self._emit_next_puzzle_cue(timestamp_seconds),)
+        return (self._emit_next_puzzle_cue(timestamp_seconds, volume_context),)
 
     def stop(
         self,
@@ -238,6 +245,47 @@ class TmrCueScheduler:
             reason_codes=_unique(reason_codes),
         )
         return self._record(event)
+
+    def _apply_guard_decision(
+        self,
+        guard_decision: Optional[ArousalGuardDecision],
+        timestamp_seconds: float,
+    ) -> Optional[TmrSchedulerEvent]:
+        if guard_decision is None or guard_decision.action in {"allow", "lower_volume"}:
+            return None
+        if guard_decision.should_stop:
+            return self.stop(
+                timestamp_seconds=timestamp_seconds,
+                reason_codes=("arousal_guard_stop",) + guard_decision.reason_codes,
+            )
+        if guard_decision.should_pause:
+            return self._pause_for_guard(guard_decision, timestamp_seconds)
+        return None
+
+    def _pause_for_guard(
+        self,
+        guard_decision: ArousalGuardDecision,
+        timestamp_seconds: float,
+    ) -> TmrSchedulerEvent:
+        self._active_block = False
+        self._tlr_block_played = False
+        self._tlr_block_start_seconds = None
+        self._tlr_event_index = 0
+        self._puzzle_cues_in_block = 0
+        pause_seconds = max(self.config.cooldown_seconds, guard_decision.pause_seconds)
+        self._cooldown_until_seconds = timestamp_seconds + pause_seconds
+        return self._record(
+            TmrSchedulerEvent(
+                event_type="pause",
+                timestamp_seconds=timestamp_seconds,
+                reason_codes=("arousal_guard_pause",) + guard_decision.reason_codes,
+                metadata={
+                    "cooldown_until_seconds": self._cooldown_until_seconds,
+                    "pause_seconds": pause_seconds,
+                    "arousal_guard": guard_decision.to_dict(),
+                },
+            )
+        )
 
     def _handle_closed_gate(
         self,
@@ -270,7 +318,11 @@ class TmrCueScheduler:
         self._puzzle_cues_in_block = 0
         self._next_puzzle_time_seconds = timestamp_seconds
 
-    def _maybe_emit_tlr_block(self, timestamp_seconds: float) -> Tuple[TmrSchedulerEvent, ...]:
+    def _maybe_emit_tlr_block(
+        self,
+        timestamp_seconds: float,
+        volume_context: Mapping[str, object],
+    ) -> Tuple[TmrSchedulerEvent, ...]:
         if not self.config.enable_tlr_block or self.tlr_block_plan is None or self._tlr_block_played:
             return ()
 
@@ -291,7 +343,7 @@ class TmrCueScheduler:
             scheduled_time = block_start + block_event.offset_seconds
             if timestamp_seconds < scheduled_time:
                 break
-            due_events.append(self._emit_tlr_event(block_event, scheduled_time))
+            due_events.append(self._emit_tlr_event(block_event, scheduled_time, volume_context))
             self._tlr_event_index += 1
 
         if self._tlr_event_index >= len(self.tlr_block_plan.events):
@@ -318,10 +370,24 @@ class TmrCueScheduler:
             block_start_seconds + self.tlr_block_plan.puzzle_cue_start_offset_seconds,
         )
 
-    def _emit_tlr_event(self, block_event, timestamp_seconds: float) -> TmrSchedulerEvent:
+    def _emit_tlr_event(
+        self,
+        block_event,
+        timestamp_seconds: float,
+        volume_context: Mapping[str, object],
+    ) -> TmrSchedulerEvent:
         cue = self.cue_library.by_id(block_event.cue_id)
         if cue.protocol != "tlr":
             raise ValueError(f"TLR block cue must use protocol='tlr': {block_event.cue_id}")
+        metadata = _cue_metadata(
+            cue_duration_seconds=block_event.duration_seconds,
+            cue_volume_hint=cue.volume_hint,
+            volume_context=volume_context,
+            extra={
+                "block_event_type": block_event.event_type,
+                "tlr_event_index": self._tlr_event_index + 1,
+            },
+        )
         return self._record(
             TmrSchedulerEvent(
                 event_type="play",
@@ -329,18 +395,24 @@ class TmrCueScheduler:
                 cue_id=block_event.cue_id,
                 protocol="tlr",
                 reason_codes=("tlr_block",),
-                metadata={
-                    "duration_seconds": block_event.duration_seconds,
-                    "block_event_type": block_event.event_type,
-                    "tlr_event_index": self._tlr_event_index + 1,
-                },
+                metadata=metadata,
             )
         )
 
-    def _emit_next_puzzle_cue(self, timestamp_seconds: float) -> TmrSchedulerEvent:
+    def _emit_next_puzzle_cue(
+        self,
+        timestamp_seconds: float,
+        volume_context: Mapping[str, object],
+    ) -> TmrSchedulerEvent:
         puzzle_id, cue_id = self._scheduled_puzzles[self._next_puzzle_index]
         self.assignment.ensure_schedulable(puzzle_id)
         cue = self.cue_library.by_id(cue_id)
+        metadata = _cue_metadata(
+            cue_duration_seconds=cue.duration_seconds,
+            cue_volume_hint=cue.volume_hint,
+            volume_context=volume_context,
+            extra={"puzzle_cue_index": self._puzzle_cues_in_block + 1},
+        )
         event = self._record(
             TmrSchedulerEvent(
                 event_type="play",
@@ -349,11 +421,7 @@ class TmrCueScheduler:
                 protocol="puzzle",
                 puzzle_id=puzzle_id,
                 reason_codes=("rem_gate_open", "cued_puzzle"),
-                metadata={
-                    "duration_seconds": cue.duration_seconds,
-                    "volume_hint": cue.volume_hint,
-                    "puzzle_cue_index": self._puzzle_cues_in_block + 1,
-                },
+                metadata=metadata,
             )
         )
         self._next_puzzle_index += 1
@@ -421,6 +489,39 @@ def _scheduled_puzzles(
             raise ValueError(f"scheduled puzzle cue must use protocol='puzzle': {cue_id}")
         scheduled.append((puzzle_id, cue_id))
     return tuple(scheduled)
+
+
+def _guard_volume_context(
+    guard_decision: Optional[ArousalGuardDecision],
+) -> Mapping[str, object]:
+    if guard_decision is None or not guard_decision.should_lower_volume:
+        return {}
+    return {
+        "arousal_guard_action": guard_decision.action,
+        "arousal_guard_reason_codes": list(guard_decision.reason_codes),
+        "volume_multiplier": guard_decision.volume_multiplier,
+    }
+
+
+def _cue_metadata(
+    *,
+    cue_duration_seconds: float,
+    cue_volume_hint: Optional[float],
+    volume_context: Mapping[str, object],
+    extra: Mapping[str, object],
+) -> Dict[str, object]:
+    metadata: Dict[str, object] = {
+        "duration_seconds": cue_duration_seconds,
+        **dict(extra),
+    }
+    if cue_volume_hint is not None:
+        metadata["volume_hint"] = cue_volume_hint
+    if volume_context:
+        metadata.update(volume_context)
+        if cue_volume_hint is not None:
+            metadata["original_volume_hint"] = cue_volume_hint
+            metadata["volume_hint"] = cue_volume_hint * float(volume_context["volume_multiplier"])
+    return metadata
 
 
 def _optional_str(value: object) -> Optional[str]:

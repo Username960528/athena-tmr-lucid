@@ -21,6 +21,11 @@ records the detectable, identifiable, and comfortable volume for the target play
 device. Cue scheduling should use the calibrated comfortable volume, bounded by the
 session hard cap, and should block rather than cue when calibration is missing.
 
+`muse_tmr.protocol.arousal_guard.ArousalGuard` evaluates motion, alpha, sudden HR
+change, and artifact-quality proxies before scheduler decisions. Its conservative
+defaults can lower volume, pause cueing with cooldown, or stop the session plan, and
+each decision is JSONL-loggable for replay review.
+
 Cue libraries must validate private sound-file availability before a sleep session.
 Missing cue files should block the session plan rather than failing after the subject
 is asleep.
