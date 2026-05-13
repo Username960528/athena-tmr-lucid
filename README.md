@@ -389,6 +389,27 @@ free-text recall, and optional per-puzzle links. Each `--puzzle-link` is validat
 against the generated night puzzle session so reports can connect dream content back
 to the experimental puzzle IDs without making uncued assumptions.
 
+M6 morning puzzle retest:
+
+```bash
+muse-tmr record-puzzle-retest data/protocol/night-001_puzzles.json \
+  --catalog data/protocol/puzzle_catalog.json \
+  --assignment data/protocol/night-001_assignment.json \
+  --output data/reports/night-001_retest.json \
+  --result "p1=Answer from morning" \
+  --result "p2=" \
+  --solved p1 \
+  --duration "p1=42" \
+  --duration "p2=30" \
+  --confidence "p1=0.8" \
+  --confidence "p2=0.2"
+```
+
+Retests save one result per generated session puzzle with response, solved/unsolved,
+duration, confidence, cue ID, blind order, and `cue_condition` (`cued` or `uncued`)
+from the assignment for later analysis. During administration, do not reveal the
+cued/uncued condition to the subject.
+
 > **Finally!** Direct BLE connection to Muse S without proprietary SDKs. We're quite *amused* that we cracked the protocol nobody else has published online!
 
 ## 🎉 The Real Story

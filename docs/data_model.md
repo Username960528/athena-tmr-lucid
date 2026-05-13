@@ -346,5 +346,20 @@ with cue IDs from `PuzzleCatalog`. `muse-tmr record-dream-report` writes the rep
 Dream text and puzzle-link excerpts are private morning data and should stay in
 gitignored report locations.
 
+## Morning Retests
+
+`muse_tmr.reports.morning_retest` defines versioned morning puzzle retest records:
+
+- `MorningRetest`: session ID, result counts, solved/unsolved counts, mean duration,
+  notes, metadata, and per-puzzle results
+- `MorningRetestResult`: puzzle ID, cue ID, blind order, `cue_condition`, response,
+  solved flag, duration, confidence, and notes
+
+`build_morning_retest()` validates results against `NightPuzzleSession`, enriches cue
+IDs from `PuzzleCatalog`, and stores cued/uncued condition from `PuzzleCueAssignment`
+for analysis. `muse-tmr record-puzzle-retest` writes the retest JSON. The retest should
+be administered blind; `cue_condition` is for downstream analysis, not subject-facing
+prompts.
+
 Puzzle protocol files may contain private puzzle content, responses, and night/session
 metadata, so `data/protocol/` is gitignored.

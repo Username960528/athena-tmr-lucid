@@ -231,6 +231,42 @@ class TestCli(unittest.TestCase):
             "p2=the shape was in the dream",
         ])
 
+    def test_morning_retest_command_parses_blind_results(self):
+        args = build_parser().parse_args([
+            "record-puzzle-retest",
+            "data/protocol/session.json",
+            "--catalog",
+            "data/protocol/catalog.json",
+            "--assignment",
+            "data/protocol/assignment.json",
+            "--output",
+            "data/reports/night-001_retest.json",
+            "--result",
+            "p1=answer",
+            "--result",
+            "p2=wrong",
+            "--solved",
+            "p1",
+            "--duration",
+            "p1=12",
+            "--duration",
+            "p2=24",
+            "--confidence",
+            "p1=0.9",
+            "--confidence",
+            "p2=0.3",
+        ])
+
+        self.assertEqual(args.command, "record-puzzle-retest")
+        self.assertEqual(args.session, Path("data/protocol/session.json"))
+        self.assertEqual(args.catalog, Path("data/protocol/catalog.json"))
+        self.assertEqual(args.assignment, Path("data/protocol/assignment.json"))
+        self.assertEqual(args.output, Path("data/reports/night-001_retest.json"))
+        self.assertEqual(args.result, ["p1=answer", "p2=wrong"])
+        self.assertEqual(args.solved, ["p1"])
+        self.assertEqual(args.duration, ["p1=12", "p2=24"])
+        self.assertEqual(args.confidence, ["p1=0.9", "p2=0.3"])
+
     def test_amused_source_import_does_not_cycle(self):
         self.assertEqual(AmusedSource.strategy, "forked-source")
 

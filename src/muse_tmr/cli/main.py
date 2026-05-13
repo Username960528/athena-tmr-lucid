@@ -8,7 +8,7 @@ import datetime as dt
 import os
 import sys
 from pathlib import Path
-from typing import Optional, Sequence
+from typing import Mapping, Optional, Sequence
 
 from muse_tmr import __version__
 
@@ -260,6 +260,52 @@ def build_parser() -> argparse.ArgumentParser:
     dream_report_parser.add_argument("--report-id", default="")
     dream_report_parser.add_argument("--notes", default="")
 
+    retest_parser = subparsers.add_parser(
+        "record-puzzle-retest",
+        help="Capture morning puzzle retest results for a night puzzle session.",
+    )
+    retest_parser.add_argument("session", type=Path, help="Input night puzzle session .json path.")
+    retest_parser.add_argument("--catalog", type=Path, required=True, help="Puzzle catalog .json path.")
+    retest_parser.add_argument("--assignment", type=Path, required=True, help="Cued/uncued assignment .json path.")
+    retest_parser.add_argument("--output", type=Path, required=True, help="Output morning retest .json path.")
+    retest_parser.add_argument(
+        "--result",
+        action="append",
+        default=[],
+        metavar="PUZZLE_ID=RESPONSE",
+        help="Retest response. Repeat once per session puzzle; empty response is allowed.",
+    )
+    retest_parser.add_argument(
+        "--solved",
+        action="append",
+        default=[],
+        metavar="PUZZLE_ID",
+        help="Mark a retest puzzle as solved. Unlisted result puzzles are saved as unsolved.",
+    )
+    retest_parser.add_argument(
+        "--duration",
+        action="append",
+        default=[],
+        metavar="PUZZLE_ID=SECONDS",
+        help="Retest duration in seconds. Repeat once per result puzzle.",
+    )
+    retest_parser.add_argument(
+        "--confidence",
+        action="append",
+        default=[],
+        metavar="PUZZLE_ID=0.0-1.0",
+        help="Self-report confidence. Repeat once per result puzzle.",
+    )
+    retest_parser.add_argument(
+        "--note",
+        action="append",
+        default=[],
+        metavar="PUZZLE_ID=TEXT",
+        help="Optional per-puzzle retest note.",
+    )
+    retest_parser.add_argument("--retest-id", default="")
+    retest_parser.add_argument("--notes", default="")
+
     assignment_parser = subparsers.add_parser(
         "assign-puzzle-cues",
         help="Randomize a night puzzle session into cued and uncued groups.",
@@ -336,6 +382,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         return _record_association_check(args)
     if args.command == "record-dream-report":
         return _record_dream_report(args)
+    if args.command == "record-puzzle-retest":
+        return _record_puzzle_retest(args)
     if args.command == "assign-puzzle-cues":
         return _assign_puzzle_cues(args)
     if args.command == "record":
@@ -822,6 +870,63 @@ def _record_dream_report(args: argparse.Namespace) -> int:
     return 0
 
 
+def _record_puzzle_retest(args: argparse.Namespace) -> int:
+    from muse_tmr.protocol import (
+        load_night_puzzle_session,
+        load_puzzle_catalog,
+        load_puzzle_cue_assignment,
+    )
+    from muse_tmr.reports import MorningRetestResult, build_morning_retest
+
+    session = load_night_puzzle_session(_resolve_output_path(args.session))
+    catalog = load_puzzle_catalog(_resolve_output_path(args.catalog))
+    assignment = load_puzzle_cue_assignment(_resolve_output_path(args.assignment))
+    responses = _parse_key_values(args.result, "--result", allow_empty_value=True)
+    durations = _parse_float_key_values(args.duration, "--duration")
+    confidences = _parse_float_key_values(args.confidence, "--confidence")
+    notes = _parse_key_values(args.note, "--note", allow_empty_value=True)
+
+    result_ids = set(responses)
+    if not result_ids:
+        raise ValueError("record-puzzle-retest requires at least one --result")
+    solved_ids = set(args.solved)
+    extra_solved = tuple(sorted(solved_ids - result_ids))
+    if extra_solved:
+        raise ValueError(f"--solved references puzzles without --result: {extra_solved}")
+    _require_matching_keys("--duration", durations, result_ids)
+    _require_matching_keys("--confidence", confidences, result_ids)
+
+    results = tuple(
+        MorningRetestResult(
+            puzzle_id=puzzle_id,
+            response=response,
+            solved=puzzle_id in solved_ids,
+            duration_seconds=durations[puzzle_id],
+            confidence=confidences[puzzle_id],
+            notes=notes.get(puzzle_id, ""),
+        )
+        for puzzle_id, response in responses.items()
+    )
+    retest = build_morning_retest(
+        session,
+        results,
+        catalog=catalog,
+        assignment=assignment,
+        retest_id=args.retest_id,
+        notes=args.notes,
+    )
+    output_path = retest.save(_resolve_output_path(args.output))
+    print(
+        "morning puzzle retest recorded "
+        f"session={retest.session_id} "
+        f"results={len(retest.results)} "
+        f"solved={retest.solved_count} "
+        f"unsolved={retest.unsolved_count} "
+        f"output={output_path}"
+    )
+    return 0
+
+
 def _assign_puzzle_cues(args: argparse.Namespace) -> int:
     from muse_tmr.protocol import assign_cued_uncued_puzzles, load_night_puzzle_session
 
@@ -845,19 +950,40 @@ def _assign_puzzle_cues(args: argparse.Namespace) -> int:
 
 
 def _parse_puzzle_links(values: Sequence[str]) -> dict:
-    links = {}
+    return _parse_key_values(values, "--puzzle-link", allow_empty_value=False)
+
+
+def _parse_key_values(
+    values: Sequence[str],
+    option_name: str,
+    *,
+    allow_empty_value: bool = False,
+) -> dict:
+    parsed = {}
     for value in values:
         if "=" not in value:
-            raise ValueError("--puzzle-link must use PUZZLE_ID=TEXT")
+            raise ValueError(f"{option_name} must use PUZZLE_ID=VALUE")
         puzzle_id, text = value.split("=", 1)
         puzzle_id = puzzle_id.strip()
         text = text.strip()
-        if not puzzle_id or not text:
-            raise ValueError("--puzzle-link must include non-empty puzzle ID and text")
-        if puzzle_id in links:
-            raise ValueError(f"duplicate --puzzle-link for puzzle_id={puzzle_id}")
-        links[puzzle_id] = text
-    return links
+        if not puzzle_id or (not text and not allow_empty_value):
+            raise ValueError(f"{option_name} must include non-empty puzzle ID and value")
+        if puzzle_id in parsed:
+            raise ValueError(f"duplicate {option_name} for puzzle_id={puzzle_id}")
+        parsed[puzzle_id] = text
+    return parsed
+
+
+def _parse_float_key_values(values: Sequence[str], option_name: str) -> dict:
+    parsed = _parse_key_values(values, option_name, allow_empty_value=False)
+    return {key: float(value) for key, value in parsed.items()}
+
+
+def _require_matching_keys(option_name: str, values: Mapping[str, object], expected_keys: set) -> None:
+    missing = tuple(sorted(expected_keys - set(values)))
+    extra = tuple(sorted(set(values) - expected_keys))
+    if missing or extra:
+        raise ValueError(f"{option_name} keys must match --result keys: missing={missing} extra={extra}")
 
 
 def _yes_no(value: str) -> bool:
