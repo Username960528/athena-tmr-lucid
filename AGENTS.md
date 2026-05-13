@@ -140,6 +140,10 @@ Prefer the existing simple module style until an issue explicitly introduces a p
   calibration files out of git, and make scheduler code use the calibrated comfortable
   volume as the max while still respecting a hard safety cap. Missing calibration
   should block planned sleep-time cue sessions.
+- Pre-sleep puzzle session management lives in `muse_tmr.protocol.puzzle_protocol`.
+  Keep puzzle catalogs, timed attempts, solved/known/retired filters, and association
+  checks separate from cued-vs-uncued randomization. Do not commit private puzzle
+  content, user responses, or generated sessions; `data/protocol/` is gitignored.
 
 ## Testing Expectations
 

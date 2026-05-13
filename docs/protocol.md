@@ -16,3 +16,27 @@ session starts. Protocol layers should reference cue IDs from a validated catalo
 rather than hard-coded file paths.
 
 Protocol settings start in `configs/protocol_konkoly_like.yaml` and should be versioned with each session.
+
+## Pre-Sleep Puzzle Sessions
+
+Puzzle session management lives in `muse_tmr.protocol.puzzle_protocol`. It is the M5
+foundation for later cued-vs-uncued randomization and REM-gated scheduling.
+
+The puzzle catalog stores:
+
+- puzzle ID, prompt, solution, and cue ID
+- solved, known, and retired flags
+- tags/source metadata
+- timed pre-sleep attempts
+
+Night sessions are generated from eligible unsolved tasks. By default, eligibility
+excludes solved, known, and retired tasks, then selects four tasks. Passing a seed makes
+selection reproducible. This layer does not assign cued vs uncued status; that belongs
+to the later randomization layer.
+
+Association checks compare a remembered response with the expected solution using a
+case-insensitive whitespace-normalized match and append the result to the night session
+metadata.
+
+Private catalogs and generated sessions should stay under gitignored locations such as
+`data/protocol/`.

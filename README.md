@@ -276,6 +276,34 @@ optional volume hints, and private sound file paths. Sound cue files under
 `cues/private/` or `data/cues/audio/` are gitignored by default; validation detects
 missing files before a sleep session.
 
+M5 pre-sleep puzzle session manager:
+
+```bash
+muse-tmr import-puzzles puzzles.csv --output data/protocol/puzzle_catalog.json
+
+muse-tmr record-puzzle-attempt data/protocol/puzzle_catalog.json \
+  --puzzle-id p001 \
+  --response "my answer" \
+  --duration-seconds 90
+
+muse-tmr generate-puzzle-session data/protocol/puzzle_catalog.json \
+  --session-id night-001 \
+  --count 4 \
+  --seed 17 \
+  --output data/protocol/night-001_puzzles.json
+
+muse-tmr record-association-check data/protocol/night-001_puzzles.json \
+  --catalog data/protocol/puzzle_catalog.json \
+  --puzzle-id p001 \
+  --response "remembered answer"
+```
+
+Puzzle catalogs track prompts, solutions, cue IDs, solved/known/retired flags, timed
+pre-sleep attempts, and cue-to-solution association checks. Session generation filters
+out solved, known, and retired tasks and produces a reproducible night session with
+four eligible unsolved puzzles by default. `data/protocol/` is gitignored because it
+can contain private puzzle content and responses.
+
 > **Finally!** Direct BLE connection to Muse S without proprietary SDKs. We're quite *amused* that we cracked the protocol nobody else has published online!
 
 ## 🎉 The Real Story

@@ -248,3 +248,23 @@ directory before a session starts. `list-cues` filters by protocol or tag.
 Private cue files should live under gitignored folders such as `cues/private/`,
 `data/cues/private/`, or `data/cues/audio/`. Commit cue metadata only when it does not
 include private labels or personal audio paths.
+
+## Puzzle Protocol
+
+`muse_tmr.protocol.puzzle_protocol` defines versioned JSON records for the pre-sleep
+puzzle workflow:
+
+- `PuzzleCatalog`: puzzle tasks plus timed pre-sleep attempts
+- `PuzzleTask`: puzzle ID, prompt, solution, cue ID, source/tags, and solved/known/retired flags
+- `PuzzleAttempt`: response, duration, solved flag, known-after flag, timestamps, and notes
+- `NightPuzzleSession`: generated session ID, selected puzzle IDs, seed, and association results
+- `AssociationResult`: cue ID, response, expected solution, normalized match flag, timestamp, and notes
+
+`muse-tmr import-puzzles` accepts CSV or JSON rows and writes a catalog. `muse-tmr
+generate-puzzle-session` filters solved, known, and retired tasks and selects four
+eligible unsolved puzzles by default. `record-puzzle-attempt` appends timed pre-sleep
+attempts to the catalog, and `record-association-check` appends cue-to-solution checks
+to the generated night session.
+
+Puzzle protocol files may contain private puzzle content, responses, and night/session
+metadata, so `data/protocol/` is gitignored.

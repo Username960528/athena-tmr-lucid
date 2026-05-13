@@ -122,6 +122,42 @@ class TestCli(unittest.TestCase):
         self.assertEqual(list_args.protocol, "puzzle")
         self.assertEqual(list_args.tag, "generated")
 
+    def test_puzzle_protocol_commands_parse_paths(self):
+        import_args = build_parser().parse_args([
+            "import-puzzles",
+            "puzzles.csv",
+            "--output",
+            "data/protocol/catalog.json",
+        ])
+        attempt_args = build_parser().parse_args([
+            "record-puzzle-attempt",
+            "data/protocol/catalog.json",
+            "--puzzle-id",
+            "p1",
+            "--response",
+            "answer",
+            "--duration-seconds",
+            "30",
+            "--solved",
+        ])
+        association_args = build_parser().parse_args([
+            "record-association-check",
+            "data/protocol/session.json",
+            "--catalog",
+            "data/protocol/catalog.json",
+            "--puzzle-id",
+            "p1",
+            "--response",
+            "answer",
+        ])
+
+        self.assertEqual(import_args.command, "import-puzzles")
+        self.assertEqual(import_args.output, Path("data/protocol/catalog.json"))
+        self.assertEqual(attempt_args.command, "record-puzzle-attempt")
+        self.assertTrue(attempt_args.solved)
+        self.assertEqual(association_args.command, "record-association-check")
+        self.assertEqual(association_args.catalog, Path("data/protocol/catalog.json"))
+
     def test_amused_source_import_does_not_cycle(self):
         self.assertEqual(AmusedSource.strategy, "forked-source")
 
