@@ -179,6 +179,30 @@ def build_parser() -> argparse.ArgumentParser:
     pilot2_parser.add_argument("--output", type=Path, help="Optional output validation report .json path.")
     pilot2_parser.add_argument("--hard-max-volume", type=float, default=0.20)
 
+    pilot3_parser = subparsers.add_parser(
+        "simulate-replay-cues",
+        help="Generate an M8 Pilot 3 replay-only cue plan with mocked audio.",
+    )
+    pilot3_parser.add_argument("input", type=Path, help="Recording directory or raw_amused.bin path.")
+    pilot3_parser.add_argument("--catalog", type=Path, required=True, help="Puzzle catalog .json path.")
+    pilot3_parser.add_argument("--session", type=Path, required=True, help="Night puzzle session .json path.")
+    pilot3_parser.add_argument("--assignment", type=Path, required=True, help="Cued/uncued assignment .json path.")
+    pilot3_parser.add_argument("--cue-library", type=Path, required=True, help="Cue metadata library .json path.")
+    pilot3_parser.add_argument("--output", type=Path, required=True, help="Output simulation report .json path.")
+    pilot3_parser.add_argument("--scheduler-events-output", type=Path, help="Optional scheduler events .jsonl path.")
+    pilot3_parser.add_argument("--start-seconds", type=float, help="Relative replay start offset.")
+    pilot3_parser.add_argument("--end-seconds", type=float, help="Relative replay end offset.")
+    pilot3_parser.add_argument("--epoch-seconds", type=float, default=30.0)
+    pilot3_parser.add_argument("--stride-seconds", type=float, default=30.0)
+    pilot3_parser.add_argument("--enter-threshold", type=float, default=0.70)
+    pilot3_parser.add_argument("--exit-threshold", type=float, default=0.45)
+    pilot3_parser.add_argument("--min-stable-seconds", type=float, default=60.0)
+    pilot3_parser.add_argument("--gate-cooldown-seconds", type=float, default=120.0)
+    pilot3_parser.add_argument("--puzzle-cue-interval-seconds", type=float, default=30.0)
+    pilot3_parser.add_argument("--scheduler-cooldown-seconds", type=float, default=120.0)
+    pilot3_parser.add_argument("--max-puzzle-cues-per-block", type=int, default=4)
+    pilot3_parser.add_argument("--disable-arousal-guard", action="store_true")
+
     list_cues_parser = subparsers.add_parser("list-cues", help="List cues from a cue metadata library.")
     list_cues_parser.add_argument("input", type=Path, help="Input cue library .json path.")
     list_cues_parser.add_argument("--protocol", choices=("puzzle", "tlr", "test", "generic"))
@@ -417,6 +441,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         return _validate_pilot1_recording(args)
     if args.command == "validate-pilot2-calibration":
         return _validate_pilot2_calibration(args)
+    if args.command == "simulate-replay-cues":
+        return asyncio.run(_simulate_replay_cues(args))
     if args.command == "list-cues":
         return _list_cues(args)
     if args.command == "create-tlr-cue":
@@ -752,6 +778,67 @@ def _validate_pilot2_calibration(args: argparse.Namespace) -> int:
     if args.output is not None:
         report.save(_resolve_output_path(args.output))
     print(json.dumps(report.to_dict(), indent=2, sort_keys=True))
+    return 0 if report.passed else 1
+
+
+async def _simulate_replay_cues(args: argparse.Namespace) -> int:
+    from muse_tmr.audio import load_cue_library
+    from muse_tmr.features import EpochConfig
+    from muse_tmr.models import RemGateConfig
+    from muse_tmr.protocol import (
+        TmrSchedulerConfig,
+        load_night_puzzle_session,
+        load_puzzle_catalog,
+        load_puzzle_cue_assignment,
+    )
+    from muse_tmr.protocol.arousal_guard import ArousalGuardConfig
+    from muse_tmr.validation import simulate_replay_cue_plan
+
+    report = await simulate_replay_cue_plan(
+        _resolve_output_path(args.input),
+        catalog=load_puzzle_catalog(_resolve_output_path(args.catalog)),
+        session=load_night_puzzle_session(_resolve_output_path(args.session)),
+        assignment=load_puzzle_cue_assignment(_resolve_output_path(args.assignment)),
+        cue_library=load_cue_library(_resolve_output_path(args.cue_library)),
+        start_seconds=args.start_seconds,
+        end_seconds=args.end_seconds,
+        epoch_config=EpochConfig(
+            epoch_seconds=args.epoch_seconds,
+            stride_seconds=args.stride_seconds,
+        ),
+        gate_config=RemGateConfig(
+            enter_threshold=args.enter_threshold,
+            exit_threshold=args.exit_threshold,
+            min_stable_seconds=args.min_stable_seconds,
+            epoch_seconds=args.epoch_seconds,
+            cooldown_seconds=args.gate_cooldown_seconds,
+        ),
+        scheduler_config=TmrSchedulerConfig(
+            puzzle_cue_interval_seconds=args.puzzle_cue_interval_seconds,
+            cooldown_seconds=args.scheduler_cooldown_seconds,
+            max_puzzle_cues_per_block=args.max_puzzle_cues_per_block,
+            enable_tlr_block=False,
+        ),
+        arousal_guard_config=ArousalGuardConfig(enabled=not args.disable_arousal_guard),
+    )
+    output_path = report.save(_resolve_output_path(args.output))
+    scheduler_events_output = None
+    if args.scheduler_events_output is not None:
+        scheduler_events_output = report.save_scheduler_events(
+            _resolve_output_path(args.scheduler_events_output)
+        )
+
+    print(
+        "pilot3 replay cue simulation complete "
+        f"passed={report.passed} "
+        f"epochs={report.metrics.get('epoch_count', 0)} "
+        f"gate_open={report.metrics.get('gate_open_count', 0)} "
+        f"cue_plan={report.metrics.get('cue_plan_count', 0)} "
+        f"audio_playback_executed={report.audio_playback_executed} "
+        f"output={output_path}"
+    )
+    if scheduler_events_output is not None:
+        print(f"scheduler_events={scheduler_events_output}")
     return 0 if report.passed else 1
 
 

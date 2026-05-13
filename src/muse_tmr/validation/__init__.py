@@ -13,6 +13,13 @@ from muse_tmr.validation.pilot2 import (
     Pilot2ValidationReport,
     validate_pilot2_calibration,
 )
+from muse_tmr.validation.pilot3 import (
+    Pilot3Criterion,
+    Pilot3EpochResult,
+    Pilot3ReplayCueSimulationReport,
+    simulate_cue_plan_from_epochs,
+    simulate_replay_cue_plan,
+)
 
 __all__ = [
     "DEFAULT_PILOT1_MIN_DURATION_SECONDS",
@@ -22,6 +29,11 @@ __all__ = [
     "Pilot1ValidationReport",
     "Pilot2Criterion",
     "Pilot2ValidationReport",
+    "Pilot3Criterion",
+    "Pilot3EpochResult",
+    "Pilot3ReplayCueSimulationReport",
+    "simulate_cue_plan_from_epochs",
+    "simulate_replay_cue_plan",
     "validate_pilot2_calibration",
     "validate_pilot1_recording",
 ]

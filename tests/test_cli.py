@@ -186,6 +186,44 @@ class TestCli(unittest.TestCase):
         self.assertEqual(args.output, Path("data/reports/pilot2_audio_calibration_validation.json"))
         self.assertEqual(args.hard_max_volume, 0.2)
 
+    def test_pilot3_replay_simulation_command_parses_inputs(self):
+        args = build_parser().parse_args([
+            "simulate-replay-cues",
+            "data/recordings/night-001",
+            "--catalog",
+            "data/protocol/catalog.json",
+            "--session",
+            "data/protocol/night-001_puzzles.json",
+            "--assignment",
+            "data/protocol/night-001_assignment.json",
+            "--cue-library",
+            "data/cues/starter.json",
+            "--output",
+            "data/reports/pilot3_replay_cue_plan.json",
+            "--scheduler-events-output",
+            "data/reports/pilot3_scheduler_events.jsonl",
+            "--start-seconds",
+            "30",
+            "--end-seconds",
+            "600",
+            "--min-stable-seconds",
+            "30",
+            "--disable-arousal-guard",
+        ])
+
+        self.assertEqual(args.command, "simulate-replay-cues")
+        self.assertEqual(args.input, Path("data/recordings/night-001"))
+        self.assertEqual(args.catalog, Path("data/protocol/catalog.json"))
+        self.assertEqual(args.session, Path("data/protocol/night-001_puzzles.json"))
+        self.assertEqual(args.assignment, Path("data/protocol/night-001_assignment.json"))
+        self.assertEqual(args.cue_library, Path("data/cues/starter.json"))
+        self.assertEqual(args.output, Path("data/reports/pilot3_replay_cue_plan.json"))
+        self.assertEqual(args.scheduler_events_output, Path("data/reports/pilot3_scheduler_events.jsonl"))
+        self.assertEqual(args.start_seconds, 30.0)
+        self.assertEqual(args.end_seconds, 600.0)
+        self.assertEqual(args.min_stable_seconds, 30.0)
+        self.assertTrue(args.disable_arousal_guard)
+
     def test_tlr_protocol_commands_parse_paths(self):
         create_args = build_parser().parse_args([
             "create-tlr-cue",
