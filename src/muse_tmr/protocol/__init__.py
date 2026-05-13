@@ -39,6 +39,16 @@ from muse_tmr.protocol.tlr_protocol import (
     train_tlr_cue,
     write_tlr_events,
 )
+from muse_tmr.protocol.tmr_scheduler import (
+    CueDecision,
+    TmrCueScheduler,
+    TmrSchedulerConfig,
+    TmrSchedulerEvent,
+    append_tmr_scheduler_events,
+    arousal_guard_decision,
+    calibrated_cue_decision,
+    load_tmr_scheduler_events,
+)
 
 __all__ = [
     "CUE_RANDOMIZATION_SCHEMA_VERSION",
@@ -47,6 +57,7 @@ __all__ = [
     "PUZZLE_PROTOCOL_SCHEMA_VERSION",
     "TLR_PROTOCOL_SCHEMA_VERSION",
     "AssociationResult",
+    "CueDecision",
     "CueAssignment",
     "NightPuzzleSession",
     "PuzzleAttempt",
@@ -60,7 +71,13 @@ __all__ = [
     "TlrTrainingConfig",
     "TlrTrainingEvent",
     "TlrTrainingSession",
+    "TmrCueScheduler",
+    "TmrSchedulerConfig",
+    "TmrSchedulerEvent",
+    "append_tmr_scheduler_events",
+    "arousal_guard_decision",
     "assign_cued_uncued_puzzles",
+    "calibrated_cue_decision",
     "default_tlr_cue",
     "default_tlr_cue_library",
     "import_puzzle_file",
@@ -69,6 +86,7 @@ __all__ = [
     "load_puzzle_cue_assignment",
     "load_tlr_block_plan",
     "load_tlr_training_session",
+    "load_tmr_scheduler_events",
     "plan_tlr_block",
     "puzzle_catalog_from_rows",
     "split_cued_uncued",

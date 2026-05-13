@@ -335,6 +335,28 @@ pre-sleep TLR cue familiarization through the audio player facade and writes str
 JSONL training events. `plan-tlr-block` produces the configurable TLR cue block that
 future REM-gated scheduler code should run before puzzle cues.
 
+M5 REM-gated scheduler:
+
+```python
+from muse_tmr.protocol import TmrCueScheduler, TmrSchedulerConfig
+
+scheduler = TmrCueScheduler(
+    assignment=puzzle_cue_assignment,
+    catalog=puzzle_catalog,
+    cue_library=cue_library,
+    tlr_block_plan=tlr_block_plan,
+    config=TmrSchedulerConfig(max_puzzle_cues_per_block=4),
+)
+
+for timestamp_seconds, gate_decision in replayed_gate_decisions:
+    events = scheduler.update(gate_decision, timestamp_seconds=timestamp_seconds)
+```
+
+The scheduler consumes stable REM gate decisions, optionally emits a TLR block first,
+then schedules only cued puzzle cues from `scheduled_puzzle_ids`. It enforces
+cue interval, cooldown, and max-per-block limits, and logs structured `play`, `skip`,
+`pause`, and `stop` events. It does not call audio playback directly.
+
 > **Finally!** Direct BLE connection to Muse S without proprietary SDKs. We're quite *amused* that we cracked the protocol nobody else has published online!
 
 ## 🎉 The Real Story

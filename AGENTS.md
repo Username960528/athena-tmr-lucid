@@ -152,6 +152,11 @@ Prefer the existing simple module style until an issue explicitly introduces a p
   pre-sleep training events, and REM TLR block planning separate from the final scheduler.
   Training should use `AudioCuePlayer` with mock or dry-run backends in tests and must
   write structured events.
+- REM-gated cue scheduling lives in `muse_tmr.protocol.tmr_scheduler`. It should consume
+  `RemGateDecision`, optional `TlrBlockPlan`, and `PuzzleCueAssignment.scheduled_puzzle_ids`;
+  never schedule uncued puzzles. Keep it deterministic and replay-testable, log
+  `play`, `skip`, `pause`, and `stop` events, and do not call real audio playback inside
+  the scheduler.
 
 ## Testing Expectations
 
