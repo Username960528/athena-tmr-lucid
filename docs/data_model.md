@@ -300,5 +300,21 @@ reactivation:
 summary JSON and JSONL training events. `plan-tlr-block` writes the TLR block that
 future scheduler code should insert before puzzle cues when the REM gate opens.
 
+## TMR Scheduler Events
+
+`muse_tmr.protocol.tmr_scheduler.TmrCueScheduler` emits `TmrSchedulerEvent` records:
+
+- `event_type`: `play`, `skip`, `pause`, or `stop`
+- `timestamp_seconds`: replay/session-relative time
+- optional `cue_id`, `protocol`, and `puzzle_id`
+- `reason_codes`
+- metadata such as duration, volume hint, next allowed cue time, or cooldown end time
+
+The scheduler consumes `RemGateDecision`, `PuzzleCueAssignment`, `PuzzleCatalog`,
+`CueLibrary`, and optional `TlrBlockPlan`. It uses only `scheduled_puzzle_ids` from
+the assignment, so uncued puzzle controls are not eligible for playback. Events can be
+appended to JSONL with `append_tmr_scheduler_events()` and read with
+`load_tmr_scheduler_events()`.
+
 Puzzle protocol files may contain private puzzle content, responses, and night/session
 metadata, so `data/protocol/` is gitignored.

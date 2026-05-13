@@ -60,6 +60,29 @@ per repetition. `muse-tmr plan-tlr-block` records cue offsets and exposes
 `puzzle_cue_start_offset_seconds`, so scheduler code can place puzzle cues after the
 TLR block and its post-block pause.
 
+## REM-Gated TMR Scheduler
+
+`muse_tmr.protocol.tmr_scheduler.TmrCueScheduler` is the deterministic scheduling layer
+between `StableRemGate` and audio playback. It consumes replayable `RemGateDecision`
+objects, never raw REM probabilities, and emits structured scheduler events rather than
+playing sounds directly.
+
+On a stable open REM gate, the scheduler:
+
+- emits the optional TLR block first
+- waits until the TLR block's `puzzle_cue_start_offset_seconds`
+- schedules puzzle cues only from `PuzzleCueAssignment.scheduled_puzzle_ids`
+- enforces cue interval, cooldown, and max puzzle cues per REM block
+
+Closed gates produce `skip` events until a block has started. If the gate closes during
+an active block, the scheduler emits `pause` and starts cooldown. `stop()` emits a
+`stop` event and future updates emit `skip` with `scheduler_stopped`.
+
+Event logs are JSONL records with event type, timestamp, cue ID, protocol, puzzle ID,
+reason codes, and metadata. Tests replay synthetic REM gate decisions to verify TLR
+ordering, puzzle-cue intervals, cooldown, max-per-block behavior, and the rule that
+uncued controls are never scheduled.
+
 Association checks compare a remembered response with the expected solution using a
 case-insensitive whitespace-normalized match and append the result to the night session
 metadata.
