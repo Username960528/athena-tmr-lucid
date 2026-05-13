@@ -151,6 +151,48 @@ def build_parser() -> argparse.ArgumentParser:
     list_cues_parser.add_argument("--protocol", choices=("puzzle", "tlr", "test", "generic"))
     list_cues_parser.add_argument("--tag")
 
+    create_tlr_parser = subparsers.add_parser(
+        "create-tlr-cue",
+        help="Create a default generated TLR cue library.",
+    )
+    create_tlr_parser.add_argument("--output", type=Path, required=True, help="Output cue library .json path.")
+    create_tlr_parser.add_argument("--cue-id", default="tlr_soft_tone")
+    create_tlr_parser.add_argument("--frequency-hz", type=float, default=396.0)
+    create_tlr_parser.add_argument("--duration-seconds", type=float, default=1.0)
+    create_tlr_parser.add_argument("--volume-hint", type=float, default=0.05)
+
+    train_tlr_parser = subparsers.add_parser(
+        "train-tlr-cue",
+        help="Run pre-sleep TLR cue training and write structured events.",
+    )
+    train_tlr_parser.add_argument("cue_library", type=Path, help="Input TLR cue library .json path.")
+    train_tlr_parser.add_argument("--cue-id", default="tlr_soft_tone")
+    train_tlr_parser.add_argument("--output", type=Path, required=True, help="Output training summary .json path.")
+    train_tlr_parser.add_argument("--event-log", type=Path, required=True, help="Output training events .jsonl path.")
+    train_tlr_parser.add_argument("--session-id", default="tlr-training")
+    train_tlr_parser.add_argument("--repetitions", type=int, default=3)
+    train_tlr_parser.add_argument("--interval-seconds", type=float, default=2.0)
+    train_tlr_parser.add_argument("--volume", type=float)
+    train_tlr_parser.add_argument("--max-volume", type=float, default=0.20)
+    train_tlr_parser.add_argument("--device-name")
+    train_tlr_parser.add_argument(
+        "--backend",
+        choices=("system", "afplay", "dry-run", "mock"),
+        default="dry-run",
+    )
+
+    plan_tlr_parser = subparsers.add_parser(
+        "plan-tlr-block",
+        help="Plan a configurable TLR block before REM-gated puzzle cues.",
+    )
+    plan_tlr_parser.add_argument("cue_library", type=Path, help="Input TLR cue library .json path.")
+    plan_tlr_parser.add_argument("--cue-id", default="tlr_soft_tone")
+    plan_tlr_parser.add_argument("--output", type=Path, required=True, help="Output TLR block plan .json path.")
+    plan_tlr_parser.add_argument("--repetitions", type=int, default=3)
+    plan_tlr_parser.add_argument("--interval-seconds", type=float, default=8.0)
+    plan_tlr_parser.add_argument("--post-block-pause-seconds", type=float, default=10.0)
+    plan_tlr_parser.add_argument("--disabled", action="store_true")
+
     import_puzzles_parser = subparsers.add_parser(
         "import-puzzles",
         help="Import puzzle tasks from .csv or .json into a versioned puzzle catalog.",
@@ -257,6 +299,12 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         return _validate_cue_library(args)
     if args.command == "list-cues":
         return _list_cues(args)
+    if args.command == "create-tlr-cue":
+        return _create_tlr_cue(args)
+    if args.command == "train-tlr-cue":
+        return _train_tlr_cue(args)
+    if args.command == "plan-tlr-block":
+        return _plan_tlr_block(args)
     if args.command == "import-puzzles":
         return _import_puzzles(args)
     if args.command == "generate-puzzle-session":
@@ -545,6 +593,95 @@ def _list_cues(args: argparse.Namespace) -> int:
             f"{cue.cue_id}\t{cue.cue_type}\t{cue.protocol}\t"
             f"{cue.duration_seconds}s\ttags={','.join(cue.tags)}"
         )
+    return 0
+
+
+def _create_tlr_cue(args: argparse.Namespace) -> int:
+    from muse_tmr.protocol import TlrCueConfig, default_tlr_cue_library
+
+    library = default_tlr_cue_library(
+        TlrCueConfig(
+            cue_id=args.cue_id,
+            frequency_hz=args.frequency_hz,
+            duration_seconds=args.duration_seconds,
+            volume_hint=args.volume_hint,
+        )
+    )
+    output_path = library.save(_resolve_output_path(args.output))
+    cue = library.cues[0]
+    print(
+        "TLR cue created "
+        f"cue={cue.cue_id} "
+        f"frequency_hz={cue.frequency_hz} "
+        f"duration_seconds={cue.duration_seconds} "
+        f"volume_hint={cue.volume_hint} "
+        f"output={output_path}"
+    )
+    return 0
+
+
+def _train_tlr_cue(args: argparse.Namespace) -> int:
+    from muse_tmr.audio import AudioCuePlayer, AudioPlaybackConfig, create_audio_backend, load_cue_library
+    from muse_tmr.protocol import TlrTrainingConfig, train_tlr_cue
+
+    library = load_cue_library(_resolve_output_path(args.cue_library))
+    cue = library.by_id(args.cue_id)
+    default_volume = args.volume if args.volume is not None else (cue.volume_hint or 0.05)
+    player = AudioCuePlayer(
+        AudioPlaybackConfig(
+            max_volume=args.max_volume,
+            default_volume=default_volume,
+            device_name=args.device_name,
+        ),
+        backend=create_audio_backend(args.backend),
+    )
+    session = train_tlr_cue(
+        cue,
+        player,
+        config=TlrTrainingConfig(
+            repetitions=args.repetitions,
+            interval_seconds=args.interval_seconds,
+            volume=args.volume,
+            backend_name=args.backend,
+        ),
+        session_id=args.session_id,
+        event_log_path=_resolve_output_path(args.event_log),
+    )
+    output_path = session.save(_resolve_output_path(args.output))
+    print(
+        "TLR training complete "
+        f"session={session.session_id} "
+        f"cue={session.cue_id} "
+        f"events={session.event_count} "
+        f"output={output_path} "
+        f"event_log={_resolve_output_path(args.event_log)}"
+    )
+    return 0
+
+
+def _plan_tlr_block(args: argparse.Namespace) -> int:
+    from muse_tmr.audio import load_cue_library
+    from muse_tmr.protocol import TlrBlockConfig, plan_tlr_block
+
+    library = load_cue_library(_resolve_output_path(args.cue_library))
+    cue = library.by_id(args.cue_id)
+    plan = plan_tlr_block(
+        cue,
+        config=TlrBlockConfig(
+            enabled=not args.disabled,
+            repetitions=args.repetitions,
+            interval_seconds=args.interval_seconds,
+            post_block_pause_seconds=args.post_block_pause_seconds,
+        ),
+    )
+    output_path = plan.save(_resolve_output_path(args.output))
+    print(
+        "TLR block planned "
+        f"cue={plan.cue_id} "
+        f"events={len(plan.events)} "
+        f"puzzle_start_offset={plan.puzzle_cue_start_offset_seconds} "
+        f"output={output_path}"
+    )
     return 0
 
 

@@ -148,6 +148,10 @@ Prefer the existing simple module style until an issue explicitly introduces a p
   `PuzzleCueAssignment` records and make scheduler code consume `scheduled_puzzle_ids`
   or `scheduled_cue_ids()`, never all session puzzle IDs, so uncued controls cannot be
   scheduled.
+- TLR cue support lives in `muse_tmr.protocol.tlr_protocol`. Keep default cue metadata,
+  pre-sleep training events, and REM TLR block planning separate from the final scheduler.
+  Training should use `AudioCuePlayer` with mock or dry-run backends in tests and must
+  write structured events.
 
 ## Testing Expectations
 

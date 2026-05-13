@@ -45,6 +45,21 @@ iterating over every puzzle in the night session. Calling `ensure_schedulable()`
 uncued puzzle raises an error, making accidental scheduling of control tasks a tested
 contract.
 
+## TLR Cue Module
+
+Targeted lucidity reactivation support lives in `muse_tmr.protocol.tlr_protocol`.
+The module provides three pieces for the later REM-gated scheduler:
+
+- a default generated TLR cue metadata library
+- a pre-sleep training routine that plays or dry-runs repeated TLR cues and writes JSONL events
+- a configurable REM TLR block plan to run before puzzle cues
+
+`muse-tmr create-tlr-cue` creates the default generated cue. `muse-tmr train-tlr-cue`
+uses `AudioCuePlayer` with a selected backend and records one `tlr_training_cue` event
+per repetition. `muse-tmr plan-tlr-block` records cue offsets and exposes
+`puzzle_cue_start_offset_seconds`, so scheduler code can place puzzle cues after the
+TLR block and its post-block pause.
+
 Association checks compare a remembered response with the expected solution using a
 case-insensitive whitespace-normalized match and append the result to the night session
 metadata.

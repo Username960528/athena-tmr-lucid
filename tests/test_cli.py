@@ -122,6 +122,35 @@ class TestCli(unittest.TestCase):
         self.assertEqual(list_args.protocol, "puzzle")
         self.assertEqual(list_args.tag, "generated")
 
+    def test_tlr_protocol_commands_parse_paths(self):
+        create_args = build_parser().parse_args([
+            "create-tlr-cue",
+            "--output",
+            "data/cues/tlr.json",
+        ])
+        train_args = build_parser().parse_args([
+            "train-tlr-cue",
+            "data/cues/tlr.json",
+            "--output",
+            "data/protocol/tlr_training.json",
+            "--event-log",
+            "data/protocol/tlr_training.jsonl",
+        ])
+        block_args = build_parser().parse_args([
+            "plan-tlr-block",
+            "data/cues/tlr.json",
+            "--output",
+            "data/protocol/tlr_block.json",
+            "--disabled",
+        ])
+
+        self.assertEqual(create_args.command, "create-tlr-cue")
+        self.assertEqual(create_args.output, Path("data/cues/tlr.json"))
+        self.assertEqual(train_args.command, "train-tlr-cue")
+        self.assertEqual(train_args.backend, "dry-run")
+        self.assertEqual(block_args.command, "plan-tlr-block")
+        self.assertTrue(block_args.disabled)
+
     def test_puzzle_protocol_commands_parse_paths(self):
         import_args = build_parser().parse_args([
             "import-puzzles",
