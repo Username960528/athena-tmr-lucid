@@ -151,6 +151,52 @@ def build_parser() -> argparse.ArgumentParser:
     list_cues_parser.add_argument("--protocol", choices=("puzzle", "tlr", "test", "generic"))
     list_cues_parser.add_argument("--tag")
 
+    import_puzzles_parser = subparsers.add_parser(
+        "import-puzzles",
+        help="Import puzzle tasks from .csv or .json into a versioned puzzle catalog.",
+    )
+    import_puzzles_parser.add_argument("input", type=Path, help="Input .csv or .json puzzle task file.")
+    import_puzzles_parser.add_argument("--output", type=Path, required=True, help="Output catalog .json path.")
+
+    generate_puzzle_session_parser = subparsers.add_parser(
+        "generate-puzzle-session",
+        help="Generate a pre-sleep night puzzle session from eligible unsolved tasks.",
+    )
+    generate_puzzle_session_parser.add_argument("catalog", type=Path, help="Input puzzle catalog .json path.")
+    generate_puzzle_session_parser.add_argument("--output", type=Path, required=True, help="Output session .json path.")
+    generate_puzzle_session_parser.add_argument("--session-id", required=True)
+    generate_puzzle_session_parser.add_argument("--count", type=int, default=4)
+    generate_puzzle_session_parser.add_argument("--seed", type=int)
+    generate_puzzle_session_parser.add_argument(
+        "--include-known",
+        action="store_true",
+        help="Allow known-but-unsolved tasks in the generated session.",
+    )
+
+    attempt_parser = subparsers.add_parser(
+        "record-puzzle-attempt",
+        help="Append a timed pre-sleep puzzle attempt to a puzzle catalog.",
+    )
+    attempt_parser.add_argument("catalog", type=Path, help="Input puzzle catalog .json path.")
+    attempt_parser.add_argument("--output", type=Path, help="Output catalog .json path. Defaults to input.")
+    attempt_parser.add_argument("--puzzle-id", required=True)
+    attempt_parser.add_argument("--response", required=True)
+    attempt_parser.add_argument("--duration-seconds", type=float, required=True)
+    attempt_parser.add_argument("--solved", action="store_true")
+    attempt_parser.add_argument("--known-after", action="store_true")
+    attempt_parser.add_argument("--notes", default="")
+
+    association_parser = subparsers.add_parser(
+        "record-association-check",
+        help="Append a cue-to-puzzle association result to a generated puzzle session.",
+    )
+    association_parser.add_argument("session", type=Path, help="Input night puzzle session .json path.")
+    association_parser.add_argument("--catalog", type=Path, required=True, help="Puzzle catalog .json path.")
+    association_parser.add_argument("--output", type=Path, help="Output session .json path. Defaults to input.")
+    association_parser.add_argument("--puzzle-id", required=True)
+    association_parser.add_argument("--response", required=True)
+    association_parser.add_argument("--notes", default="")
+
     record_parser = subparsers.add_parser("record", help="Record an overnight Muse session.")
     record_parser.add_argument("--source", choices=("amused",), default="amused")
     record_parser.add_argument("--address", help="Muse BLE address. If omitted, discovery is used.")
@@ -198,6 +244,14 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         return _validate_cue_library(args)
     if args.command == "list-cues":
         return _list_cues(args)
+    if args.command == "import-puzzles":
+        return _import_puzzles(args)
+    if args.command == "generate-puzzle-session":
+        return _generate_puzzle_session(args)
+    if args.command == "record-puzzle-attempt":
+        return _record_puzzle_attempt(args)
+    if args.command == "record-association-check":
+        return _record_association_check(args)
     if args.command == "record":
         return asyncio.run(_record(args))
 
@@ -476,6 +530,87 @@ def _list_cues(args: argparse.Namespace) -> int:
             f"{cue.cue_id}\t{cue.cue_type}\t{cue.protocol}\t"
             f"{cue.duration_seconds}s\ttags={','.join(cue.tags)}"
         )
+    return 0
+
+
+def _import_puzzles(args: argparse.Namespace) -> int:
+    from muse_tmr.protocol import import_puzzle_file
+
+    catalog = import_puzzle_file(_resolve_output_path(args.input))
+    output_path = catalog.save(_resolve_output_path(args.output))
+    print(f"puzzle catalog imported puzzles={catalog.puzzle_count} output={output_path}")
+    return 0
+
+
+def _generate_puzzle_session(args: argparse.Namespace) -> int:
+    from muse_tmr.protocol import load_puzzle_catalog
+
+    catalog = load_puzzle_catalog(_resolve_output_path(args.catalog))
+    session = catalog.generate_night_session(
+        session_id=args.session_id,
+        puzzle_count=args.count,
+        selection_seed=args.seed,
+        include_known=args.include_known,
+    )
+    output_path = session.save(_resolve_output_path(args.output))
+    print(
+        "puzzle session generated "
+        f"session={session.session_id} "
+        f"puzzles={len(session.puzzle_ids)} "
+        f"eligible={session.metadata.get('eligible_count')} "
+        f"output={output_path}"
+    )
+    return 0
+
+
+def _record_puzzle_attempt(args: argparse.Namespace) -> int:
+    from muse_tmr.protocol import PuzzleAttempt, load_puzzle_catalog
+
+    input_path = _resolve_output_path(args.catalog)
+    output_path = _resolve_output_path(args.output) if args.output else input_path
+    catalog = load_puzzle_catalog(input_path)
+    attempt = PuzzleAttempt(
+        puzzle_id=args.puzzle_id,
+        response=args.response,
+        duration_seconds=args.duration_seconds,
+        solved=args.solved,
+        known_after=args.known_after,
+        notes=args.notes,
+    )
+    updated = catalog.with_attempt(attempt)
+    updated.save(output_path)
+    print(
+        "puzzle attempt recorded "
+        f"puzzle={attempt.puzzle_id} "
+        f"duration_seconds={attempt.duration_seconds} "
+        f"solved={attempt.solved} "
+        f"known_after={attempt.known_after} "
+        f"output={output_path}"
+    )
+    return 0
+
+
+def _record_association_check(args: argparse.Namespace) -> int:
+    from muse_tmr.protocol import load_night_puzzle_session, load_puzzle_catalog
+
+    input_path = _resolve_output_path(args.session)
+    output_path = _resolve_output_path(args.output) if args.output else input_path
+    catalog = load_puzzle_catalog(_resolve_output_path(args.catalog))
+    session = load_night_puzzle_session(input_path)
+    result = catalog.check_association(
+        args.puzzle_id,
+        args.response,
+        notes=args.notes,
+    )
+    updated = session.with_association_result(result)
+    updated.save(output_path)
+    print(
+        "association check recorded "
+        f"session={updated.session_id} "
+        f"puzzle={result.puzzle_id} "
+        f"matched={result.matched} "
+        f"output={output_path}"
+    )
     return 0
 
 
