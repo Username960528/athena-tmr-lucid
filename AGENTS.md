@@ -165,6 +165,10 @@ Prefer the existing simple module style until an issue explicitly introduces a p
   structured, local-first, and versioned; link dream content to generated session puzzle
   IDs only after validating against `NightPuzzleSession`. Do not commit real dream
   reports, private recall text, or morning session outputs.
+- Morning puzzle retest capture lives in `muse_tmr.reports.morning_retest`. Keep the
+  retest blind during administration, but save `cue_condition` from `PuzzleCueAssignment`
+  in the output for later analysis. Require solved/unsolved, duration, and confidence
+  for each generated session puzzle.
 
 ## Testing Expectations
 

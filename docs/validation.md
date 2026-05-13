@@ -23,4 +23,8 @@ Morning dream reports should preserve raw self-report text and structured yes/no
 separately from later analysis. Puzzle incorporation should be counted only when the
 report links dream content to a puzzle ID from the generated night session.
 
+Morning retest results should cover every generated session puzzle. Solved/unsolved,
+duration, confidence, and stored cue condition are the minimum fields needed before
+cued-vs-uncued analysis.
+
 All reports must include limitations, especially small sample sizes and the difference between consumer EEG and laboratory PSG scoring.

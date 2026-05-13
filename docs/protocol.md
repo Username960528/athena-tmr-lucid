@@ -122,6 +122,33 @@ muse-tmr record-dream-report data/protocol/night-001_puzzles.json \
   --puzzle-link "p2=the second puzzle appeared as a sign"
 ```
 
+## Morning Puzzle Retest
+
+`muse_tmr.reports.morning_retest` captures the morning retest for the previous night's
+generated unsolved puzzle set. The workflow records a response, solved/unsolved flag,
+duration, and confidence for every `NightPuzzleSession` puzzle. It validates the full
+set against the session and stores cue condition from `PuzzleCueAssignment` for
+cued-vs-uncued analysis.
+
+The CLI command is:
+
+```bash
+muse-tmr record-puzzle-retest data/protocol/night-001_puzzles.json \
+  --catalog data/protocol/puzzle_catalog.json \
+  --assignment data/protocol/night-001_assignment.json \
+  --output data/reports/night-001_retest.json \
+  --result "p1=morning answer" \
+  --result "p2=" \
+  --solved p1 \
+  --duration "p1=42" \
+  --duration "p2=30" \
+  --confidence "p1=0.8" \
+  --confidence "p2=0.2"
+```
+
+The retest should remain blind during administration: do not reveal which puzzles were
+cued. The output stores `cue_condition` only for later analysis.
+
 Association checks compare a remembered response with the expected solution using a
 case-insensitive whitespace-normalized match and append the result to the night session
 metadata.
