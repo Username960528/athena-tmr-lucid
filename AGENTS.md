@@ -181,6 +181,9 @@ Prefer the existing simple module style until an issue explicitly introduces a p
   versioned, and local-first; combine session, assignment, retest, optional dream report,
   and scheduler events without copying raw dream text into summary outputs. Always record
   limitations such as small-N or missing timing data.
+- M8 validation planning lives in `docs/validation.md`. Keep validation metrics tied to
+  concrete logs or artifact fields, separate protocol fidelity from behavioral deltas,
+  and include limitations instead of claiming clinical or lucid-dreaming efficacy.
 
 ## Testing Expectations
 

@@ -450,6 +450,18 @@ The analysis report compares cued and uncued solve rates, dream incorporation ra
 mean retest duration/confidence, and scheduler cue timing. It is intentionally
 descriptive and records limitations such as small sample size or missing cue logs.
 
+M8 validation plan:
+
+```text
+docs/validation.md
+```
+
+Validation separates protocol fidelity and technical quality from exploratory
+behavioral deltas. Metrics are computed from generated session artifacts such as
+`summary.json`, feature rows, scheduler JSONL, dream reports, morning retests, and
+cued-vs-uncued analysis outputs. Reports should describe observed differences and
+limitations; do not claim clinical, medical, or guaranteed lucid-dreaming efficacy.
+
 > **Finally!** Direct BLE connection to Muse S without proprietary SDKs. We're quite *amused* that we cracked the protocol nobody else has published online!
 
 ## 🎉 The Real Story
