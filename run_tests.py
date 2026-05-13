@@ -41,6 +41,7 @@ def run_fast_tests():
         'tests.test_rem_gate',
         'tests.test_scheduler',
         'tests.test_puzzle_protocol',
+        'tests.test_tlr_protocol',
     ]
     
     for module in fast_modules:

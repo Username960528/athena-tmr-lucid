@@ -283,5 +283,22 @@ cover exactly the session puzzle IDs with no overlap. Scheduler code should call
 `scheduled_puzzle_ids` or `scheduled_cue_ids(catalog)` so uncued controls are never
 eligible for cue playback.
 
+## TLR Protocol
+
+`muse_tmr.protocol.tlr_protocol` defines versioned records for targeted lucidity
+reactivation:
+
+- `TlrCueConfig`: default generated cue settings
+- `TlrTrainingConfig`: pre-sleep repetition count, interval, volume, and backend name
+- `TlrTrainingSession`: training summary with one event per cue presentation
+- `TlrTrainingEvent`: playback status, requested/effective volume, reason codes, and scheduled offset
+- `TlrBlockConfig`: REM block repetitions, interval, post-block pause, and enabled flag
+- `TlrBlockPlan`: cue offsets and `puzzle_cue_start_offset_seconds`
+
+`muse-tmr create-tlr-cue` writes a `CueLibrary` containing a generated TLR cue.
+`train-tlr-cue` plays or dry-runs the cue through `AudioCuePlayer` and writes both a
+summary JSON and JSONL training events. `plan-tlr-block` writes the TLR block that
+future scheduler code should insert before puzzle cues when the REM gate opens.
+
 Puzzle protocol files may contain private puzzle content, responses, and night/session
 metadata, so `data/protocol/` is gitignored.

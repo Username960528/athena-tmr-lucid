@@ -312,6 +312,29 @@ can contain private puzzle content and responses.
 groups with a seed. Scheduler code must consume `scheduled_puzzle_ids` from the saved
 assignment, which contains only cued puzzles, so uncued tasks are never scheduled.
 
+M5 TLR cue module:
+
+```bash
+muse-tmr create-tlr-cue --output data/cues/tlr_default.json
+
+muse-tmr train-tlr-cue data/cues/tlr_default.json \
+  --output data/protocol/tlr_training.json \
+  --event-log data/protocol/tlr_training.jsonl \
+  --backend dry-run \
+  --repetitions 3
+
+muse-tmr plan-tlr-block data/cues/tlr_default.json \
+  --output data/protocol/tlr_block.json \
+  --repetitions 3 \
+  --interval-seconds 8 \
+  --post-block-pause-seconds 10
+```
+
+`create-tlr-cue` writes a default generated TLR cue library. `train-tlr-cue` runs
+pre-sleep TLR cue familiarization through the audio player facade and writes structured
+JSONL training events. `plan-tlr-block` produces the configurable TLR cue block that
+future REM-gated scheduler code should run before puzzle cues.
+
 > **Finally!** Direct BLE connection to Muse S without proprietary SDKs. We're quite *amused* that we cracked the protocol nobody else has published online!
 
 ## 🎉 The Real Story
