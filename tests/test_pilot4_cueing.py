@@ -15,7 +15,10 @@ from muse_tmr.protocol import (
     PuzzleCatalog,
     PuzzleCueAssignment,
     PuzzleTask,
+    TlrBlockConfig,
     TmrSchedulerConfig,
+    default_tlr_cue,
+    plan_tlr_block,
 )
 from muse_tmr.sources.base_source import MuseDeviceInfo, MuseSourceMetadata
 from muse_tmr.validation import (
@@ -100,6 +103,60 @@ class TestPilot4Cueing(unittest.IsolatedAsyncioTestCase):
         self.assertLessEqual(summary.max_effective_volume, 0.04)
         self.assertTrue(all(event["effective_volume"] <= 0.04 for event in audio_events))
         self.assertTrue(all(event["backend_name"] == "mock" for event in audio_events))
+
+    async def test_full_night_tlr_block_runs_before_puzzle_cues(self):
+        catalog, session, assignment, cue_library = protocol_fixture(include_tlr=True)
+        tlr_plan = plan_tlr_block(
+            default_tlr_cue(),
+            config=TlrBlockConfig(
+                repetitions=2,
+                interval_seconds=0.0,
+                post_block_pause_seconds=0.0,
+            ),
+        )
+        backend = MockAudioBackend()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            summary = await run_pilot4_cueing_night(
+                FakeMuseSource(rem_frames(5)),
+                config=pilot4_config(
+                    Path(tmpdir),
+                    enable_tlr_block=True,
+                    pilot_id="m8_pilot5_full_night_tlr_puzzle_cueing",
+                    summary_filename="pilot5_summary.json",
+                    require_tlr_block=True,
+                ),
+                catalog=catalog,
+                session=session,
+                assignment=assignment,
+                cue_library=cue_library,
+                calibration=VolumeCalibration("Sleep Headphones", 0.01, 0.02, 0.04),
+                backend=backend,
+                tlr_block_plan=tlr_plan,
+            )
+            scheduler_events = [
+                json.loads(line)
+                for line in Path(summary.scheduler_events_path).read_text(encoding="utf-8").splitlines()
+            ]
+            summary_payload = json.loads(Path(summary.summary_path).read_text(encoding="utf-8"))
+
+        play_events = [event for event in scheduler_events if event["event_type"] == "play"]
+
+        self.assertTrue(summary.passed)
+        self.assertEqual(summary.pilot_id, "m8_pilot5_full_night_tlr_puzzle_cueing")
+        self.assertEqual(Path(summary.summary_path).name, "pilot5_summary.json")
+        self.assertTrue(summary.tlr_block_required)
+        self.assertEqual(summary.tlr_cue_play_count, 2)
+        self.assertGreaterEqual(summary.puzzle_cue_play_count, 1)
+        self.assertEqual(summary.uncued_puzzle_play_count, 0)
+        self.assertEqual([event["protocol"] for event in play_events[:2]], ["tlr", "tlr"])
+        self.assertIn("puzzle", [event["protocol"] for event in play_events[2:]])
+        self.assertTrue(
+            all("rem_gate_open" in event["reason_codes"] for event in play_events),
+        )
+        self.assertIn("tlr_block_played", [criterion.name for criterion in summary.criteria])
+        self.assertEqual(summary_payload["tlr_cue_play_count"], 2)
+        self.assertTrue(summary_payload["tlr_block_required"])
+        self.assertEqual(len(backend.requests), summary.cue_play_count)
 
     async def test_emergency_stop_file_blocks_audio_backend_requests(self):
         catalog, session, assignment, cue_library = protocol_fixture()
@@ -193,6 +250,10 @@ def pilot4_config(
     emergency_stop_path=None,
     duration_seconds=1.0,
     no_data_timeout_seconds=30.0,
+    enable_tlr_block=False,
+    pilot_id="m8_pilot4_low_volume_rem_gated_cueing",
+    summary_filename="pilot4_summary.json",
+    require_tlr_block=False,
 ):
     return Pilot4CueingConfig(
         output_dir=output_dir,
@@ -215,12 +276,15 @@ def pilot4_config(
             puzzle_cue_interval_seconds=30.0,
             cooldown_seconds=30.0,
             max_puzzle_cues_per_block=4,
-            enable_tlr_block=False,
+            enable_tlr_block=enable_tlr_block,
         ),
+        pilot_id=pilot_id,
+        summary_filename=summary_filename,
+        require_tlr_block=require_tlr_block,
     )
 
 
-def protocol_fixture():
+def protocol_fixture(*, include_tlr=False):
     catalog = PuzzleCatalog(
         puzzles=(
             PuzzleTask("p1", "one", "one", cue_id="cue-p1"),
@@ -240,26 +304,29 @@ def protocol_fixture():
         uncued_puzzle_ids=("p2", "p4"),
         seed=17,
     )
+    cues = (
+        CueMetadata(
+            "cue-p1",
+            "generated_tone",
+            0.01,
+            protocol="puzzle",
+            frequency_hz=440.0,
+            volume_hint=0.10,
+        ),
+        CueMetadata(
+            "cue-p3",
+            "generated_tone",
+            0.01,
+            protocol="puzzle",
+            frequency_hz=660.0,
+            volume_hint=0.10,
+        ),
+    )
+    if include_tlr:
+        cues = cues + (default_tlr_cue(),)
     cue_library = CueLibrary(
         library_id="pilot4-test",
-        cues=(
-            CueMetadata(
-                "cue-p1",
-                "generated_tone",
-                0.01,
-                protocol="puzzle",
-                frequency_hz=440.0,
-                volume_hint=0.10,
-            ),
-            CueMetadata(
-                "cue-p3",
-                "generated_tone",
-                0.01,
-                protocol="puzzle",
-                frequency_hz=660.0,
-                volume_hint=0.10,
-            ),
-        ),
+        cues=cues,
     )
     return catalog, session, assignment, cue_library
 

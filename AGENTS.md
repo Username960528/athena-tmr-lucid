@@ -201,6 +201,10 @@ Prefer the existing simple module style until an issue explicitly introduces a p
   use `muse-tmr run-pilot4-cueing`, and make real audio explicit through the selected
   backend while logging scheduler, arousal, audio, awakening, and emergency-stop
   artifacts.
+- M8 Pilot 5 is the full-night TLR plus puzzle-cueing workflow. Keep its runbook in
+  `docs/pilot5_full_night.md`, require the Pilot 4 safety setup plus a TLR block plan,
+  use `muse-tmr run-pilot5-full-night`, and do not interpret results until dream
+  report, blind retest, scheduler logs, and cued-vs-uncued analysis are generated.
 
 ## Testing Expectations
 

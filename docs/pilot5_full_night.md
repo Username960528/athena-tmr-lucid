@@ -1,0 +1,191 @@
+# M8 Pilot 5: Full-Night TLR and Puzzle Cueing
+
+Pilot 5 is the first full protocol night. It keeps Pilot 4 safety controls, adds a
+required TLR block, and then allows REM-gated puzzle cues from the cued half of the
+night puzzle session.
+
+## Goal
+
+- Run a normal overnight Muse recording with epochs, REM detection, stable gate,
+  arousal guard, scheduler, and audio playback logs.
+- Present the TLR block after the first stable REM gate opening.
+- Present only cued puzzle cues after the TLR block and scheduler interval rules.
+- Preserve uncued puzzles as controls and verify they never receive scheduler `play`
+  events.
+- Generate the morning dream report, blind puzzle retest, and cued-vs-uncued analysis.
+
+Pilot 5 is exploratory. Treat results as a protocol-fidelity and descriptive analysis
+artifact, not evidence of efficacy.
+
+## Preflight
+
+Required before using `--backend system`:
+
+- Pilot 2 volume calibration exists and passed validation.
+- Pilot 3 replay simulation passed on a recent recording.
+- Pilot 4 dry-run or live low-volume cueing smoke completed without permanent safety
+  stops from ordinary recoverable artifacts.
+- Puzzle catalog has at least four eligible unsolved puzzles.
+- Night session and cue assignment exist, with cued and uncued puzzles randomized.
+- Cue library contains the puzzle cue IDs and the TLR cue ID referenced by the block.
+- TLR training was run before sleep, and a TLR block plan exists.
+- macOS output device is set to the intended sleep headphones.
+- You know the emergency stop path for the run.
+
+## Prepare Protocol Files
+
+```bash
+cd /path/to/athena-tmr-lucid
+
+.venv/bin/python -m muse_tmr.cli.main create-cue-library \
+  --output data/cues/starter.json
+
+.venv/bin/python -m muse_tmr.cli.main train-tlr-cue data/cues/starter.json \
+  --output data/protocol/night-001_tlr_training.json \
+  --event-log data/protocol/night-001_tlr_training.jsonl \
+  --backend dry-run \
+  --repetitions 3
+
+.venv/bin/python -m muse_tmr.cli.main plan-tlr-block data/cues/starter.json \
+  --output data/protocol/night-001_tlr_block.json \
+  --repetitions 3 \
+  --interval-seconds 8 \
+  --post-block-pause-seconds 10
+```
+
+Use `--backend system` for `train-tlr-cue` only if you intentionally want audible
+pre-sleep TLR familiarization.
+
+## Dry-Run Smoke
+
+```bash
+OUTDIR="data/recordings/pilot5_dry_run_$(date +%Y%m%d_%H%M%S)"
+
+.venv/bin/python -m muse_tmr.cli.main run-pilot5-full-night \
+  --source amused \
+  --address "$MUSE_ADDR" \
+  --duration-seconds 300 \
+  --allow-short \
+  --output-dir "$OUTDIR" \
+  --catalog data/protocol/puzzle_catalog.json \
+  --session data/protocol/night-001_puzzles.json \
+  --assignment data/protocol/night-001_assignment.json \
+  --cue-library data/cues/starter.json \
+  --tlr-block data/protocol/night-001_tlr_block.json \
+  --calibration data/calibration/volume_calibration.json \
+  --device-name "Sleep Headphones" \
+  --backend dry-run
+```
+
+The dry-run should produce `pilot5_summary.json`, `scheduler_events.jsonl`,
+`arousal_guard_events.jsonl`, and `audio_playback.jsonl`. The summary should include
+`tlr_block_required=true`, `tlr_cue_play_count`, `puzzle_cue_play_count`, and the
+`tlr_block_played` criterion.
+
+## Run With Audio
+
+Use real audio only when ready for a sleep run:
+
+```bash
+OUTDIR="data/recordings/pilot5_full_night_$(date +%Y%m%d_%H%M%S)"
+
+.venv/bin/python -m muse_tmr.cli.main run-pilot5-full-night \
+  --source amused \
+  --address "$MUSE_ADDR" \
+  --duration-hours 8 \
+  --output-dir "$OUTDIR" \
+  --catalog data/protocol/puzzle_catalog.json \
+  --session data/protocol/night-001_puzzles.json \
+  --assignment data/protocol/night-001_assignment.json \
+  --cue-library data/cues/starter.json \
+  --tlr-block data/protocol/night-001_tlr_block.json \
+  --calibration data/calibration/volume_calibration.json \
+  --device-name "Sleep Headphones" \
+  --backend system \
+  --default-volume 0.02 \
+  --hard-max-volume 0.20
+```
+
+The default duration rules require 2-8 hours unless `--allow-short` is present.
+
+## Emergency Stop
+
+Creating the emergency stop file blocks future playback while the recording continues:
+
+```bash
+touch "$OUTDIR/EMERGENCY_STOP"
+```
+
+## Morning Workflow
+
+Log awakenings or cue recall notes:
+
+```bash
+.venv/bin/python -m muse_tmr.cli.main log-pilot4-awakening \
+  "$OUTDIR/awakening_events.jsonl" \
+  --notes "woke briefly; cue recall unclear"
+```
+
+Record dream report:
+
+```bash
+.venv/bin/python -m muse_tmr.cli.main record-dream-report \
+  data/protocol/night-001_puzzles.json \
+  --catalog data/protocol/puzzle_catalog.json \
+  --output data/reports/night-001_dream_report.json \
+  --lucid no \
+  --cues-heard no \
+  --confidence 0.5 \
+  --dream-text ""
+```
+
+Record the blind morning puzzle retest before looking at cue conditions:
+
+```bash
+.venv/bin/python -m muse_tmr.cli.main record-puzzle-retest \
+  data/protocol/night-001_puzzles.json \
+  --catalog data/protocol/puzzle_catalog.json \
+  --assignment data/protocol/night-001_assignment.json \
+  --output data/reports/night-001_retest.json \
+  --result "p1=" \
+  --result "p2=" \
+  --result "p3=" \
+  --result "p4=" \
+  --duration "p1=30" \
+  --duration "p2=30" \
+  --duration "p3=30" \
+  --duration "p4=30" \
+  --confidence "p1=0.0" \
+  --confidence "p2=0.0" \
+  --confidence "p3=0.0" \
+  --confidence "p4=0.0"
+```
+
+Generate analysis:
+
+```bash
+.venv/bin/python -m muse_tmr.cli.main analyze-cued-uncued \
+  data/protocol/night-001_puzzles.json \
+  --assignment data/protocol/night-001_assignment.json \
+  --retest data/reports/night-001_retest.json \
+  --dream-report data/reports/night-001_dream_report.json \
+  --scheduler-events "$OUTDIR/scheduler_events.jsonl" \
+  --output data/reports/night-001_analysis.json \
+  --markdown-output data/reports/night-001_analysis.md
+```
+
+## Outputs
+
+The output directory contains:
+
+- `raw_amused.bin`, `metadata.json`, `events.jsonl`;
+- `scheduler_events.jsonl`;
+- `arousal_guard_events.jsonl`;
+- `audio_playback.jsonl`;
+- `awakening_events.jsonl`;
+- `pilot5_summary.json`.
+
+The summary passes only when the Pilot 4 safety criteria pass and at least one TLR
+block cue was logged as a scheduler `play` event. A night with no puzzle cues can still
+be valid if REM gate or safety conditions did not allow puzzle cueing after the TLR
+block.

@@ -268,6 +268,45 @@ class TestCli(unittest.TestCase):
         self.assertEqual(args.default_volume, 0.02)
         self.assertEqual(args.emergency_stop_file, Path("data/recordings/pilot4-night/STOP_AUDIO"))
 
+    def test_pilot5_full_night_command_requires_tlr_block(self):
+        args = build_parser().parse_args([
+            "run-pilot5-full-night",
+            "--source",
+            "amused",
+            "--address",
+            "AA-BB",
+            "--duration-hours",
+            "8",
+            "--output-dir",
+            "data/recordings/pilot5-night",
+            "--catalog",
+            "data/protocol/catalog.json",
+            "--session",
+            "data/protocol/session.json",
+            "--assignment",
+            "data/protocol/assignment.json",
+            "--cue-library",
+            "data/cues/starter.json",
+            "--tlr-block",
+            "data/protocol/tlr_block.json",
+            "--calibration",
+            "data/calibration/volume_calibration.json",
+            "--device-name",
+            "Sleep Headphones",
+            "--backend",
+            "system",
+        ])
+
+        self.assertEqual(args.command, "run-pilot5-full-night")
+        self.assertEqual(args.source, "amused")
+        self.assertEqual(args.address, "AA-BB")
+        self.assertEqual(args.duration_hours, 8.0)
+        self.assertEqual(args.output_dir, Path("data/recordings/pilot5-night"))
+        self.assertEqual(args.tlr_block, Path("data/protocol/tlr_block.json"))
+        self.assertEqual(args.calibration, Path("data/calibration/volume_calibration.json"))
+        self.assertEqual(args.device_name, "Sleep Headphones")
+        self.assertEqual(args.backend, "system")
+
     def test_pilot4_awakening_log_command_parses_marker(self):
         args = build_parser().parse_args([
             "log-pilot4-awakening",

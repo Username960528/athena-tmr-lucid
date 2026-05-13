@@ -40,6 +40,7 @@ from muse_tmr.protocol.tmr_scheduler import (
     TmrSchedulerConfig,
     TmrSchedulerEvent,
 )
+from muse_tmr.protocol.tlr_protocol import TlrBlockPlan
 from muse_tmr.sources.base_source import BaseMuseSource, MuseSourceMetadata
 
 PILOT4_SCHEMA_VERSION = 1
@@ -82,6 +83,9 @@ class Pilot4CueingConfig:
         default_factory=lambda: TmrSchedulerConfig(enable_tlr_block=False)
     )
     arousal_guard_config: ArousalGuardConfig = field(default_factory=ArousalGuardConfig)
+    pilot_id: str = "m8_pilot4_low_volume_rem_gated_cueing"
+    summary_filename: str = "pilot4_summary.json"
+    require_tlr_block: bool = False
 
     def validate(self) -> None:
         if self.duration_seconds <= 0:
@@ -94,6 +98,12 @@ class Pilot4CueingConfig:
             raise ValueError("hard_max_volume must be between 0.0 and 1.0")
         if not 0.0 <= self.default_volume <= 1.0:
             raise ValueError("default_volume must be between 0.0 and 1.0")
+        if not self.pilot_id.strip():
+            raise ValueError("pilot_id must not be empty")
+        if not self.summary_filename.strip():
+            raise ValueError("summary_filename must not be empty")
+        if Path(self.summary_filename).name != self.summary_filename:
+            raise ValueError("summary_filename must be a file name, not a path")
 
 
 @dataclass(frozen=True)
@@ -120,6 +130,8 @@ class Pilot4CueingSummary:
     scheduler_event_type_counts: Mapping[str, int] = field(default_factory=dict)
     audio_status_counts: Mapping[str, int] = field(default_factory=dict)
     cue_play_count: int = 0
+    puzzle_cue_play_count: int = 0
+    tlr_cue_play_count: int = 0
     uncued_puzzle_play_count: int = 0
     max_requested_volume: float = 0.0
     max_effective_volume: float = 0.0
@@ -128,6 +140,7 @@ class Pilot4CueingSummary:
     hard_max_volume: float = 0.20
     audio_backend_name: str = "unknown"
     emergency_stop_triggered: bool = False
+    tlr_block_required: bool = False
     generated_at_utc: str = ""
     schema_version: int = PILOT4_SCHEMA_VERSION
     pilot_id: str = "m8_pilot4_low_volume_rem_gated_cueing"
@@ -174,6 +187,8 @@ class Pilot4CueingSummary:
             "scheduler_event_type_counts": dict(self.scheduler_event_type_counts),
             "audio_status_counts": dict(self.audio_status_counts),
             "cue_play_count": self.cue_play_count,
+            "puzzle_cue_play_count": self.puzzle_cue_play_count,
+            "tlr_cue_play_count": self.tlr_cue_play_count,
             "uncued_puzzle_play_count": self.uncued_puzzle_play_count,
             "max_requested_volume": self.max_requested_volume,
             "max_effective_volume": self.max_effective_volume,
@@ -182,6 +197,7 @@ class Pilot4CueingSummary:
             "hard_max_volume": self.hard_max_volume,
             "audio_backend_name": self.audio_backend_name,
             "emergency_stop_triggered": self.emergency_stop_triggered,
+            "tlr_block_required": self.tlr_block_required,
         }
 
     def save(self, output_path: Path) -> Path:
@@ -236,10 +252,13 @@ async def run_pilot4_cueing_night(
     cue_library: CueLibrary,
     calibration: VolumeCalibration,
     backend: Optional[AudioBackend] = None,
+    tlr_block_plan: Optional[TlrBlockPlan] = None,
 ) -> Pilot4CueingSummary:
     config.validate()
     assignment.validate_against_session(session)
-    _validate_pilot4_cues(catalog, assignment, cue_library)
+    _validate_pilot4_cues(catalog, assignment, cue_library, tlr_block_plan=tlr_block_plan)
+    if config.require_tlr_block and tlr_block_plan is None:
+        raise ValueError("Pilot run requires a TLR block plan")
 
     output_dir = config.output_dir.expanduser()
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -250,7 +269,7 @@ async def run_pilot4_cueing_night(
     arousal_guard_events_path = output_dir / "arousal_guard_events.jsonl"
     audio_log_path = output_dir / "audio_playback.jsonl"
     awakening_events_path = output_dir / "awakening_events.jsonl"
-    summary_path = output_dir / "pilot4_summary.json"
+    summary_path = output_dir / config.summary_filename
     emergency_stop_path = (
         config.emergency_stop_path.expanduser()
         if config.emergency_stop_path is not None
@@ -270,8 +289,9 @@ async def run_pilot4_cueing_night(
     _append_jsonl(
         recording_events_path,
         {
-            "event": "pilot4_started",
+            "event": "pilot_started",
             "timestamp_utc": started_at_dt.isoformat(),
+            "pilot_id": config.pilot_id,
             "source": metadata.source_name,
             "emergency_stop_path": str(emergency_stop_path),
         },
@@ -303,6 +323,7 @@ async def run_pilot4_cueing_night(
         catalog=catalog,
         cue_library=cue_library,
         config=config.scheduler_config,
+        tlr_block_plan=tlr_block_plan,
         event_log_path=scheduler_events_path,
     )
     raw_stream = MuseRawStream(str(raw_path))
@@ -361,8 +382,9 @@ async def run_pilot4_cueing_night(
     _append_jsonl(
         recording_events_path,
         {
-            "event": "pilot4_stopped",
+            "event": "pilot_stopped",
             "timestamp_utc": ended_at_dt.isoformat(),
+            "pilot_id": config.pilot_id,
             "reason": state.stop_reason,
         },
     )
@@ -496,6 +518,12 @@ def _build_summary(
     scheduler_event_type_counts = _event_type_counts(scheduler_events)
     audio_status_counts = _audio_status_counts(state.playback_results)
     cue_play_count = scheduler_event_type_counts.get("play", 0)
+    puzzle_cue_play_count = sum(
+        1 for event in scheduler_events if event.event_type == "play" and event.protocol == "puzzle"
+    )
+    tlr_cue_play_count = sum(
+        1 for event in scheduler_events if event.event_type == "play" and event.protocol == "tlr"
+    )
     uncued_puzzle_play_count = sum(
         1
         for event in scheduler_events
@@ -515,12 +543,14 @@ def _build_summary(
         epoch_count=state.epoch_count,
         scheduler_events=scheduler_events,
         cue_play_count=cue_play_count,
+        tlr_cue_play_count=tlr_cue_play_count,
         uncued_puzzle_play_count=uncued_puzzle_play_count,
         max_effective_volume=max_effective_volume,
         calibration=calibration,
         hard_max_volume=config.hard_max_volume,
         arousal_guard_events_path=arousal_guard_events_path,
         emergency_stop_path=emergency_stop_path,
+        tlr_block_required=config.require_tlr_block,
     )
     return Pilot4CueingSummary(
         output_dir=str(output_dir),
@@ -545,6 +575,8 @@ def _build_summary(
         scheduler_event_type_counts=scheduler_event_type_counts,
         audio_status_counts=audio_status_counts,
         cue_play_count=cue_play_count,
+        puzzle_cue_play_count=puzzle_cue_play_count,
+        tlr_cue_play_count=tlr_cue_play_count,
         uncued_puzzle_play_count=uncued_puzzle_play_count,
         max_requested_volume=max_requested_volume,
         max_effective_volume=max_effective_volume,
@@ -553,6 +585,8 @@ def _build_summary(
         hard_max_volume=config.hard_max_volume,
         audio_backend_name=player.backend.name,
         emergency_stop_triggered=state.emergency_stop_triggered,
+        tlr_block_required=config.require_tlr_block,
+        pilot_id=config.pilot_id,
     )
 
 
@@ -561,16 +595,18 @@ def _build_criteria(
     epoch_count: int,
     scheduler_events: Tuple[TmrSchedulerEvent, ...],
     cue_play_count: int,
+    tlr_cue_play_count: int,
     uncued_puzzle_play_count: int,
     max_effective_volume: float,
     calibration: VolumeCalibration,
     hard_max_volume: float,
     arousal_guard_events_path: Path,
     emergency_stop_path: Path,
+    tlr_block_required: bool,
 ) -> Tuple[Pilot4Criterion, ...]:
     scheduler_plays = tuple(event for event in scheduler_events if event.event_type == "play")
     stable_rem_plays = all("rem_gate_open" in event.reason_codes for event in scheduler_plays)
-    return (
+    criteria = [
         Pilot4Criterion(
             name="epochs_present",
             passed=epoch_count > 0,
@@ -613,13 +649,25 @@ def _build_criteria(
             observed=str(emergency_stop_path),
             target="operator can create this file to block future playback",
         ),
-    )
+    ]
+    if tlr_block_required:
+        criteria.append(
+            Pilot4Criterion(
+                name="tlr_block_played",
+                passed=tlr_cue_play_count > 0,
+                observed=tlr_cue_play_count,
+                target="at least one scheduler play event with protocol=tlr",
+            )
+        )
+    return tuple(criteria)
 
 
 def _validate_pilot4_cues(
     catalog: PuzzleCatalog,
     assignment: PuzzleCueAssignment,
     cue_library: CueLibrary,
+    *,
+    tlr_block_plan: Optional[TlrBlockPlan] = None,
 ) -> None:
     for puzzle_id in assignment.scheduled_puzzle_ids:
         cue = cue_library.by_id(catalog.get_puzzle(puzzle_id).cue_id)
@@ -627,6 +675,16 @@ def _validate_pilot4_cues(
             raise ValueError(f"pilot4 supports generated_tone cues only: {cue.cue_id}")
         if cue.frequency_hz is None:
             raise ValueError(f"pilot4 generated cue must include frequency_hz: {cue.cue_id}")
+    if tlr_block_plan is None:
+        return
+    for block_event in tlr_block_plan.events:
+        cue = cue_library.by_id(block_event.cue_id)
+        if cue.protocol != "tlr":
+            raise ValueError(f"TLR block cue must use protocol='tlr': {cue.cue_id}")
+        if cue.cue_type != "generated_tone":
+            raise ValueError(f"TLR block supports generated_tone cues only: {cue.cue_id}")
+        if cue.frequency_hz is None:
+            raise ValueError(f"TLR generated cue must include frequency_hz: {cue.cue_id}")
 
 
 def _write_metadata(
@@ -638,7 +696,7 @@ def _write_metadata(
 ) -> None:
     payload = {
         "started_at": started_at.isoformat(),
-        "pilot_id": "m8_pilot4_low_volume_rem_gated_cueing",
+        "pilot_id": config.pilot_id,
         "source": {
             "source_name": metadata.source_name,
             "device_name": metadata.device_name,

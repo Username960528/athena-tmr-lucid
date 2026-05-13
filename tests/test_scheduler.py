@@ -116,8 +116,12 @@ class TestTmrCueScheduler(unittest.TestCase):
 
         self.assertEqual(first_tlr.protocol, "tlr")
         self.assertEqual(first_tlr.timestamp_seconds, 100.0)
+        self.assertIn("rem_gate_open", first_tlr.reason_codes)
+        self.assertIn("tlr_block", first_tlr.reason_codes)
         self.assertEqual(second_tlr.protocol, "tlr")
         self.assertEqual(second_tlr.timestamp_seconds, 105.0)
+        self.assertIn("rem_gate_open", second_tlr.reason_codes)
+        self.assertIn("tlr_block", second_tlr.reason_codes)
         self.assertEqual(early.event_type, "skip")
         self.assertIn("cue_interval_active", early.reason_codes)
         self.assertEqual(puzzle.event_type, "play")

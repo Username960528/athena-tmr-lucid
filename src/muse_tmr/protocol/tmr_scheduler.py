@@ -394,7 +394,7 @@ class TmrCueScheduler:
                 timestamp_seconds=timestamp_seconds,
                 cue_id=block_event.cue_id,
                 protocol="tlr",
-                reason_codes=("tlr_block",),
+                reason_codes=("rem_gate_open", "tlr_block"),
                 metadata=metadata,
             )
         )
