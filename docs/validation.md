@@ -96,7 +96,9 @@ M8 validation should progress through increasingly risky pilots:
    `docs/pilot2_audio_calibration.md` and `muse-tmr validate-pilot2-calibration` to
    confirm a dry-run cap probe uses the saved calibration.
 3. Replay cue simulation: run REM gate, arousal guard, and scheduler on replay outputs;
-   require zero uncued puzzle plays and auditable `skip` reason codes.
+   require zero uncued puzzle plays and auditable `skip` reason codes. Use
+   `docs/pilot3_replay_cue_simulation.md` and `muse-tmr simulate-replay-cues` to
+   produce the mocked-audio cue plan and scheduler event stream.
 4. Low-volume REM-gated cueing: require calibration, emergency stop availability,
    arousal guard events, scheduler events, and clear limitations.
 5. Full-night exploratory session: require the recording bundle, scheduler logs, dream

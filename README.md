@@ -488,6 +488,23 @@ validator checks that saved thresholds are ordered, scheduler max volume equals 
 comfortable volume, and a dry-run cap probe proves later playback code uses the
 calibration cap. Generated calibration files and playback logs stay local.
 
+M8 Pilot 3 replay cue simulation:
+
+```bash
+muse-tmr simulate-replay-cues data/recordings/<pilot-session> \
+  --catalog data/protocol/puzzle_catalog.json \
+  --session data/protocol/night-001_puzzles.json \
+  --assignment data/protocol/night-001_assignment.json \
+  --cue-library data/cues/starter.json \
+  --output data/reports/pilot3_replay_cue_plan.json \
+  --scheduler-events-output data/reports/pilot3_scheduler_events.jsonl
+```
+
+See `docs/pilot3_replay_cue_simulation.md` for the replay-only runbook. The simulator
+runs epochs, REM detection, the stable gate, arousal guard, and scheduler on a
+recording with mocked audio. It writes an inspectable cue plan and fails if any uncued
+puzzle receives a scheduler `play` event. No real audio is played.
+
 > **Finally!** Direct BLE connection to Muse S without proprietary SDKs. We're quite *amused* that we cracked the protocol nobody else has published online!
 
 ## 🎉 The Real Story

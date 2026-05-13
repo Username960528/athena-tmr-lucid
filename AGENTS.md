@@ -192,6 +192,10 @@ Prefer the existing simple module style until an issue explicitly introduces a p
   `docs/pilot2_audio_calibration.md`, validate calibration cap probes with
   `muse-tmr validate-pilot2-calibration`, and never commit local calibration JSON,
   playback logs, or private device names unless explicitly confirmed safe.
+- M8 Pilot 3 is a replay-only cue simulation workflow. Keep its runbook in
+  `docs/pilot3_replay_cue_simulation.md`, generate mocked-audio cue plans with
+  `muse-tmr simulate-replay-cues`, require zero uncued puzzle `play` events, and
+  never treat replay simulation as real sleep-time cueing.
 
 ## Testing Expectations
 
