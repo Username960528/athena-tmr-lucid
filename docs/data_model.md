@@ -316,5 +316,21 @@ the assignment, so uncued puzzle controls are not eligible for playback. Events 
 appended to JSONL with `append_tmr_scheduler_events()` and read with
 `load_tmr_scheduler_events()`.
 
+## Arousal Guard Decisions
+
+`muse_tmr.protocol.arousal_guard.ArousalGuard` emits `ArousalGuardDecision` records:
+
+- `action`: `allow`, `lower_volume`, `pause`, or `stop`
+- `timestamp_seconds`: replay/session-relative time
+- `reason_codes`: motion, alpha, HR-jump, or artifact-quality explanations
+- `volume_multiplier`: multiplier for lower-volume cue events
+- `pause_seconds`: requested pause duration for pause decisions
+- `metadata`: feature values, artifact flags, and consecutive guard counters
+
+Decisions can be appended to JSONL with `append_arousal_guard_decisions()` and read
+with `load_arousal_guard_decisions()`. The scheduler can consume a decision directly;
+`lower_volume` scales cue event volume hints, `pause` records a pause and cooldown, and
+`stop` records a stop event.
+
 Puzzle protocol files may contain private puzzle content, responses, and night/session
 metadata, so `data/protocol/` is gitignored.

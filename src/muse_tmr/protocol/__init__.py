@@ -1,5 +1,12 @@
 """TMR/TLR protocol components."""
 
+from muse_tmr.protocol.arousal_guard import (
+    ArousalGuard,
+    ArousalGuardConfig,
+    ArousalGuardDecision,
+    append_arousal_guard_decisions,
+    load_arousal_guard_decisions,
+)
 from muse_tmr.protocol.puzzle_protocol import (
     DEFAULT_NIGHT_PUZZLE_COUNT,
     PUZZLE_PROTOCOL_SCHEMA_VERSION,
@@ -57,6 +64,9 @@ __all__ = [
     "PUZZLE_PROTOCOL_SCHEMA_VERSION",
     "TLR_PROTOCOL_SCHEMA_VERSION",
     "AssociationResult",
+    "ArousalGuard",
+    "ArousalGuardConfig",
+    "ArousalGuardDecision",
     "CueDecision",
     "CueAssignment",
     "NightPuzzleSession",
@@ -74,6 +84,7 @@ __all__ = [
     "TmrCueScheduler",
     "TmrSchedulerConfig",
     "TmrSchedulerEvent",
+    "append_arousal_guard_decisions",
     "append_tmr_scheduler_events",
     "arousal_guard_decision",
     "assign_cued_uncued_puzzles",
@@ -82,6 +93,7 @@ __all__ = [
     "default_tlr_cue_library",
     "import_puzzle_file",
     "load_night_puzzle_session",
+    "load_arousal_guard_decisions",
     "load_puzzle_catalog",
     "load_puzzle_cue_assignment",
     "load_tlr_block_plan",
