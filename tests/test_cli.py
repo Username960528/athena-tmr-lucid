@@ -20,6 +20,40 @@ class TestCli(unittest.TestCase):
         self.assertEqual(args.source, "amused")
         self.assertEqual(args.duration_seconds, 3600)
 
+    def test_app_command_parses_local_defaults_and_mock_source(self):
+        args = build_parser().parse_args([
+            "app",
+            "--source",
+            "mock",
+            "--mock-scenario",
+            "all_good",
+        ])
+
+        self.assertEqual(args.command, "app")
+        self.assertEqual(args.source, "mock")
+        self.assertEqual(args.host, "127.0.0.1")
+        self.assertEqual(args.port, 8765)
+        self.assertEqual(args.mock_scenario, "all_good")
+
+    def test_app_command_parses_amused_address_and_explicit_host(self):
+        args = build_parser().parse_args([
+            "app",
+            "--source",
+            "amused",
+            "--address",
+            "AA-BB",
+            "--host",
+            "0.0.0.0",
+            "--port",
+            "9000",
+        ])
+
+        self.assertEqual(args.command, "app")
+        self.assertEqual(args.source, "amused")
+        self.assertEqual(args.address, "AA-BB")
+        self.assertEqual(args.host, "0.0.0.0")
+        self.assertEqual(args.port, 9000)
+
     def test_stream_command_parses_openmuse_lsl_source(self):
         args = build_parser().parse_args([
             "stream",
