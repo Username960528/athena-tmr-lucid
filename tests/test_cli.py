@@ -1,9 +1,36 @@
+import contextlib
+import io
 import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from muse_tmr.cli import main as cli_main
 from muse_tmr.cli.main import _default_recording_dir, _resolve_output_dir, build_parser
 from muse_tmr.sources.amused_source import AmusedSource
+from muse_tmr.sources.base_source import MuseSourceMetadata
+
+
+class FailingStreamSource:
+    def __init__(self):
+        self.stopped = False
+
+    async def connect(self):
+        return MuseSourceMetadata(
+            source_name="fake",
+            device_name="Muse Test",
+            device_id="test-address",
+            capabilities={"eeg": True},
+        )
+
+    async def stream(self):
+        raise RuntimeError("boom")
+        yield
+
+    async def stop(self):
+        self.stopped = True
+
+    def diagnostics(self):
+        return {"decoder": {"decode_errors": 0}, "packet_count": 0}
 
 
 class TestCli(unittest.TestCase):
@@ -14,11 +41,13 @@ class TestCli(unittest.TestCase):
             "amused",
             "--duration-seconds",
             "3600",
+            "--debug-stats",
         ])
 
         self.assertEqual(args.command, "stream")
         self.assertEqual(args.source, "amused")
         self.assertEqual(args.duration_seconds, 3600)
+        self.assertTrue(args.debug_stats)
 
     def test_app_command_parses_local_defaults_and_mock_source(self):
         args = build_parser().parse_args([
@@ -557,6 +586,31 @@ class TestCli(unittest.TestCase):
         self.assertTrue(output_dir.is_absolute())
         self.assertTrue(str(output_dir).endswith("data/recordings/smoke"))
         self.assertFalse(str(output_dir).startswith("/data/"))
+
+
+class TestCliStreamRuntime(unittest.IsolatedAsyncioTestCase):
+    async def test_stream_debug_stats_prints_on_failure(self):
+        args = build_parser().parse_args([
+            "stream",
+            "--source",
+            "amused",
+            "--duration-seconds",
+            "1",
+            "--debug-stats",
+        ])
+        source = FailingStreamSource()
+        stdout = io.StringIO()
+        stderr = io.StringIO()
+
+        with patch("muse_tmr.cli.main._build_source", return_value=source):
+            with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+                code = await cli_main._stream(args)
+
+        self.assertEqual(code, 1)
+        self.assertTrue(source.stopped)
+        self.assertIn("stream diagnostics=", stdout.getvalue())
+        self.assertIn("\"packet_count\": 0", stdout.getvalue())
+        self.assertIn("stream failed error=boom", stderr.getvalue())
 
 
 if __name__ == "__main__":

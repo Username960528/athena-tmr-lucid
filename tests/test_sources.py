@@ -96,6 +96,10 @@ class TestSources(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(source.frame_count, 1)
         self.assertEqual(frames[0].eeg.channels_uv["TP9"], (0.25,))
         self.assertEqual(frames[0].raw_packet, b"\x11\x22")
+        diagnostics = source.diagnostics()
+        self.assertEqual(diagnostics["packet_count"], 1)
+        self.assertEqual(diagnostics["frame_count"], 1)
+        self.assertIn("decoder", diagnostics)
 
     async def test_amused_discover_reports_corebluetooth_child_crash(self):
         completed = subprocess.CompletedProcess(

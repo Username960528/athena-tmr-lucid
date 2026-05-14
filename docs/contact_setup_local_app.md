@@ -160,4 +160,17 @@ Backend behavior:
   window.
 - Disconnect or stale contact resets readiness before session start.
 
+## Live Diagnostics
+
+The local app exposes live source diagnostics at:
+
+```text
+GET /api/muse/diagnostics
+```
+
+For the `amused` source, the payload includes packet/frame counts, decoder
+TAG counts, unknown TAG counts, decode errors, cumulative sample rates, and
+rolling sample rates over the decoder window. Use this when checking whether a
+short live smoke is seeing startup jitter or steady-state EEG/PPG rates.
+
 Run this checklist before Pilot 4 or Pilot 5 overnight sessions.

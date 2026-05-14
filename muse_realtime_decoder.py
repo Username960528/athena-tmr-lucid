@@ -7,10 +7,11 @@ Uses TAG-based subpacket parsing per the Athena protocol.
 """
 
 import numpy as np
-from typing import Dict, List, Optional, Callable, Any
+from typing import Dict, List, Optional, Callable, Any, Deque, Tuple
 from dataclasses import dataclass
 import datetime
 import logging
+from collections import deque
 
 try:
     from scipy.signal import find_peaks
@@ -21,6 +22,8 @@ except ImportError:
 import muse_athena_protocol as proto
 
 logger = logging.getLogger(__name__)
+
+RATE_WINDOW_SECONDS = 10.0
 
 
 @dataclass
@@ -64,6 +67,14 @@ class MuseRealtimeDecoder:
 
         # Statistics
         self.stats = self._initial_stats()
+        self._rate_events: Dict[str, Deque[Tuple[datetime.datetime, int]]] = {
+            'notifications': deque(),
+            'eeg_subpackets': deque(),
+            'eeg_sample_rows': deque(),
+            'ppg_subpackets': deque(),
+            'ppg_sample_rows': deque(),
+            'imu_sample_rows': deque(),
+        }
 
         # Buffers for derived metrics
         self.ppg_buffer = []
@@ -91,11 +102,22 @@ class MuseRealtimeDecoder:
             'eeg_subpackets': 0,
             'eeg_sample_rows': 0,
             'eeg_values': 0,
+            'eeg_first_sample_time': None,
+            'eeg_last_sample_time': None,
             'ppg_samples': 0,
             'ppg_subpackets': 0,
             'ppg_sample_rows': 0,
             'ppg_values': 0,
+            'ppg_first_sample_time': None,
+            'ppg_last_sample_time': None,
             'imu_samples': 0,
+            'imu_first_sample_time': None,
+            'imu_last_sample_time': None,
+            'tag_counts': {},
+            'tag_type_counts': {},
+            'unknown_tag_counts': {},
+            'truncated_notifications': 0,
+            'short_notifications': 0,
             'decode_errors': 0,
             'first_packet_time': None,
             'last_packet_time': None,
@@ -119,8 +141,10 @@ class MuseRealtimeDecoder:
         if self.stats['first_packet_time'] is None:
             self.stats['first_packet_time'] = timestamp
         self.stats['last_packet_time'] = timestamp
+        self._record_rate_event('notifications', timestamp, 1)
 
         if not data:
+            self._record_payload_inspection(proto.inspect_payload(data))
             return DecodedData(timestamp=timestamp, packet_type='EMPTY', raw_bytes=data)
 
         decoded = DecodedData(
@@ -130,6 +154,7 @@ class MuseRealtimeDecoder:
         )
 
         try:
+            self._record_payload_inspection(proto.inspect_payload(data))
             parsed = proto.parse_payload(data)
             self._populate_decoded(parsed, decoded)
         except Exception as e:
@@ -156,6 +181,9 @@ class MuseRealtimeDecoder:
                 self.stats['eeg_sample_rows'] += sample_rows
                 self.stats['eeg_values'] += values
                 self.stats['eeg_samples'] += values
+                self._record_modality_time('eeg', decoded.timestamp)
+                self._record_rate_event('eeg_subpackets', decoded.timestamp, 1)
+                self._record_rate_event('eeg_sample_rows', decoded.timestamp, sample_rows)
                 if n_channels == 4:
                     names = proto.EEG_CHANNELS_4
                 else:
@@ -173,6 +201,8 @@ class MuseRealtimeDecoder:
                 decoded.imu['accel'] = arr[:, 0:3].tolist()
                 decoded.imu['gyro'] = arr[:, 3:6].tolist()
                 self.stats['imu_samples'] += arr.shape[0]
+                self._record_modality_time('imu', decoded.timestamp)
+                self._record_rate_event('imu_sample_rows', decoded.timestamp, arr.shape[0])
             if not parsed["EEG"]:
                 decoded.packet_type = 'IMU'
 
@@ -186,6 +216,9 @@ class MuseRealtimeDecoder:
                 self.stats['ppg_subpackets'] += 1
                 self.stats['ppg_sample_rows'] += sample_rows
                 self.stats['ppg_values'] += sample_rows * n_channels
+                self._record_modality_time('ppg', decoded.timestamp)
+                self._record_rate_event('ppg_subpackets', decoded.timestamp, 1)
+                self._record_rate_event('ppg_sample_rows', decoded.timestamp, sample_rows)
                 if n_channels == 8:
                     names = proto.OPTICS_CHANNELS_8
                 else:
@@ -267,21 +300,56 @@ class MuseRealtimeDecoder:
     def get_stats(self) -> Dict[str, Any]:
         """Get decoder statistics"""
         elapsed_seconds = self._stats_elapsed_seconds()
-        eeg_rate = self._effective_rate(self.stats['eeg_sample_rows'], elapsed_seconds)
-        ppg_rate = self._effective_rate(self.stats['ppg_sample_rows'], elapsed_seconds)
+        eeg_elapsed_seconds = self._modality_elapsed_seconds('eeg')
+        ppg_elapsed_seconds = self._modality_elapsed_seconds('ppg')
+        imu_elapsed_seconds = self._modality_elapsed_seconds('imu')
         return {
             'packets_decoded': self.stats['packets_decoded'],
+            'notifications_per_second': self._effective_rate(
+                self.stats['packets_decoded'],
+                elapsed_seconds,
+            ),
+            'rolling_notifications_per_second': self._rolling_rate('notifications'),
             'eeg_samples': self.stats['eeg_samples'],
             'eeg_subpackets': self.stats['eeg_subpackets'],
             'eeg_sample_rows': self.stats['eeg_sample_rows'],
             'eeg_values': self.stats['eeg_values'],
-            'eeg_effective_sample_rate_hz': eeg_rate,
+            'eeg_effective_sample_rate_hz': self._effective_rate(
+                self.stats['eeg_sample_rows'],
+                eeg_elapsed_seconds,
+            ),
+            'eeg_rolling_sample_rate_hz': self._rolling_rate('eeg_sample_rows'),
+            'eeg_subpackets_per_second': self._effective_rate(
+                self.stats['eeg_subpackets'],
+                eeg_elapsed_seconds,
+            ),
+            'eeg_rolling_subpackets_per_second': self._rolling_rate('eeg_subpackets'),
             'ppg_samples': self.stats['ppg_samples'],
             'ppg_subpackets': self.stats['ppg_subpackets'],
             'ppg_sample_rows': self.stats['ppg_sample_rows'],
             'ppg_values': self.stats['ppg_values'],
-            'ppg_effective_sample_rate_hz': ppg_rate,
+            'ppg_effective_sample_rate_hz': self._effective_rate(
+                self.stats['ppg_sample_rows'],
+                ppg_elapsed_seconds,
+            ),
+            'ppg_rolling_sample_rate_hz': self._rolling_rate('ppg_sample_rows'),
+            'ppg_subpackets_per_second': self._effective_rate(
+                self.stats['ppg_subpackets'],
+                ppg_elapsed_seconds,
+            ),
+            'ppg_rolling_subpackets_per_second': self._rolling_rate('ppg_subpackets'),
             'imu_samples': self.stats['imu_samples'],
+            'imu_effective_sample_rate_hz': self._effective_rate(
+                self.stats['imu_samples'],
+                imu_elapsed_seconds,
+            ),
+            'imu_rolling_sample_rate_hz': self._rolling_rate('imu_sample_rows'),
+            'tag_counts': dict(self.stats['tag_counts']),
+            'tag_type_counts': dict(self.stats['tag_type_counts']),
+            'unknown_tag_counts': dict(self.stats['unknown_tag_counts']),
+            'truncated_notifications': self.stats['truncated_notifications'],
+            'short_notifications': self.stats['short_notifications'],
+            'rate_window_seconds': RATE_WINDOW_SECONDS,
             'decode_errors': self.stats['decode_errors'],
             'error_rate': self.stats['decode_errors'] / max(1, self.stats['packets_decoded']),
             'last_heart_rate': self.last_heart_rate,
@@ -292,6 +360,8 @@ class MuseRealtimeDecoder:
     def reset_stats(self):
         """Reset statistics"""
         self.stats = self._initial_stats()
+        for events in self._rate_events.values():
+            events.clear()
 
     def _stats_elapsed_seconds(self) -> Optional[float]:
         first = self.stats['first_packet_time']
@@ -309,6 +379,61 @@ class MuseRealtimeDecoder:
         if elapsed_seconds is None:
             return None
         return samples / elapsed_seconds
+
+    def _record_payload_inspection(self, inspection: Dict[str, object]) -> None:
+        for tag in inspection.get('tags', ()):
+            tag_key = _tag_key(int(tag))
+            self.stats['tag_counts'][tag_key] = self.stats['tag_counts'].get(tag_key, 0) + 1
+        for tag_type in inspection.get('decoded_tag_types', ()):
+            tag_type = str(tag_type)
+            self.stats['tag_type_counts'][tag_type] = self.stats['tag_type_counts'].get(tag_type, 0) + 1
+        for tag in inspection.get('unknown_tags', ()):
+            tag_key = _tag_key(int(tag))
+            self.stats['unknown_tag_counts'][tag_key] = (
+                self.stats['unknown_tag_counts'].get(tag_key, 0) + 1
+            )
+        if inspection.get('truncated'):
+            self.stats['truncated_notifications'] += 1
+        if inspection.get('short_payload'):
+            self.stats['short_notifications'] += 1
+
+    def _record_modality_time(self, modality: str, timestamp: datetime.datetime) -> None:
+        first_key = f'{modality}_first_sample_time'
+        last_key = f'{modality}_last_sample_time'
+        if self.stats[first_key] is None:
+            self.stats[first_key] = timestamp
+        self.stats[last_key] = timestamp
+
+    def _modality_elapsed_seconds(self, modality: str) -> Optional[float]:
+        first = self.stats[f'{modality}_first_sample_time']
+        last = self.stats[f'{modality}_last_sample_time']
+        if first is None or last is None:
+            return None
+        try:
+            elapsed = (last - first).total_seconds()
+        except AttributeError:
+            return None
+        return elapsed if elapsed > 0 else None
+
+    def _record_rate_event(self, metric: str, timestamp: datetime.datetime, value: int) -> None:
+        events = self._rate_events[metric]
+        events.append((timestamp, int(value)))
+        cutoff = timestamp - datetime.timedelta(seconds=RATE_WINDOW_SECONDS)
+        while events and events[0][0] < cutoff:
+            events.popleft()
+
+    def _rolling_rate(self, metric: str) -> Optional[float]:
+        events = self._rate_events[metric]
+        if len(events) < 2:
+            return None
+        elapsed = (events[-1][0] - events[0][0]).total_seconds()
+        if elapsed <= 0:
+            return None
+        return sum(value for _, value in list(events)[1:]) / elapsed
+
+
+def _tag_key(tag: int) -> str:
+    return f"0x{tag:02x}"
 
 
 # Example real-time processing

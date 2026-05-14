@@ -38,6 +38,7 @@ class TestContactContracts(unittest.TestCase):
         self.assertEqual(restored.required_channels, REQUIRED_CONTACT_CHANNELS)
         self.assertEqual(set(restored.channels), set(REQUIRED_CONTACT_CHANNELS))
         self.assertEqual(restored.channels["AF7"].status, "good")
+        self.assertEqual(payload["channels"]["AF7"]["quality_score"], payload["channels"]["AF7"]["fill"])
 
     def test_all_good_is_computed_from_required_channels_and_stale_state(self):
         snapshot = builtin_contact_snapshots("all_good")[0]

@@ -49,6 +49,7 @@ class TestLocalMuseApp(unittest.TestCase):
         self.assertEqual(set(contact["channels"]), {"TP9", "AF7", "AF8", "TP10"})
         self.assertEqual(contact["connection_state"], "disconnected")
         self.assertEqual(contact["channels"]["AF7"]["status"], "missing")
+        self.assertEqual(contact["channels"]["AF7"]["quality_score"], contact["channels"]["AF7"]["fill"])
 
     def test_contact_stream_emits_sse_snapshots(self):
         with urllib.request.urlopen(
@@ -99,6 +100,17 @@ class TestLocalMuseApp(unittest.TestCase):
         self.assertIn("/api/muse/state", script)
         self.assertIn("/api/muse/contact", script)
         self.assertIn("/api/muse/start-when-ready", script)
+
+    def test_diagnostics_endpoint_reports_state_and_last_contact(self):
+        self.post_json("/api/muse/connect")
+        self.get_json("/api/muse/contact")
+
+        diagnostics = self.get_json("/api/muse/diagnostics")
+
+        self.assertEqual(diagnostics["service"], "muse-tmr-local-app")
+        self.assertEqual(diagnostics["state"]["connection_state"], "connected")
+        self.assertIsNone(diagnostics["source_diagnostics"])
+        self.assertEqual(diagnostics["contact"]["channels"]["AF7"]["status"], "fair")
 
 
 class TestLocalMuseAppReadyGate(unittest.TestCase):

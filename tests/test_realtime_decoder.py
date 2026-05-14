@@ -88,6 +88,15 @@ class TestRealtimeDecoder(unittest.TestCase):
         self.assertIsNotNone(decoded.ppg)
         self.assertEqual(decoded.packet_type, 'MULTI')
 
+        stats = self.decoder.get_stats()
+        self.assertEqual(stats['tag_counts']['0x11'], 1)
+        self.assertEqual(stats['tag_counts']['0x47'], 1)
+        self.assertEqual(stats['tag_counts']['0x35'], 1)
+        self.assertEqual(stats['tag_type_counts']['EEG'], 1)
+        self.assertEqual(stats['tag_type_counts']['ACCGYRO'], 1)
+        self.assertEqual(stats['tag_type_counts']['OPTICS'], 1)
+        self.assertEqual(stats['unknown_tag_counts'], {})
+
     def test_repeated_eeg_subpackets_append_channel_samples(self):
         """Repeated EEG subpackets in one notification should not overwrite."""
         packet = build_tag_packet(
@@ -179,6 +188,36 @@ class TestRealtimeDecoder(unittest.TestCase):
         stats = self.decoder.get_stats()
         self.assertEqual(stats['eeg_sample_rows'], 8)
         self.assertAlmostEqual(stats['eeg_effective_sample_rate_hz'], 8.0)
+
+    def test_rolling_eeg_sample_rate_uses_recent_modality_window(self):
+        """Rolling rate should avoid old startup samples."""
+        self.decoder.reset_stats()
+        eeg_packet = build_tag_packet(proto.TAG_EEG_4CH, bytes(28))
+        t0 = datetime.datetime(2026, 1, 1, 0, 0, 0)
+
+        self.decoder.decode(eeg_packet, timestamp=t0)
+        self.decoder.decode(eeg_packet, timestamp=t0 + datetime.timedelta(seconds=20))
+        self.decoder.decode(eeg_packet, timestamp=t0 + datetime.timedelta(seconds=21))
+        self.decoder.decode(eeg_packet, timestamp=t0 + datetime.timedelta(seconds=22))
+
+        stats = self.decoder.get_stats()
+        self.assertEqual(stats['eeg_sample_rows'], 16)
+        self.assertAlmostEqual(stats['eeg_effective_sample_rate_hz'], 16 / 22)
+        self.assertAlmostEqual(stats['eeg_rolling_sample_rate_hz'], 8 / 2)
+        self.assertAlmostEqual(stats['eeg_rolling_subpackets_per_second'], 2 / 2)
+
+    def test_unknown_and_short_payload_diagnostics(self):
+        """Malformed packets should be visible in decoder diagnostics."""
+        unknown = bytearray(14)
+        unknown[9] = 0x99
+
+        self.decoder.decode(bytes(unknown) + bytes(28))
+        self.decoder.decode(b"")
+
+        stats = self.decoder.get_stats()
+        self.assertEqual(stats['unknown_tag_counts'], {'0x99': 1})
+        self.assertEqual(stats['short_notifications'], 1)
+        self.assertEqual(stats['truncated_notifications'], 1)
 
     def test_error_handling(self):
         """Test error handling for malformed packets"""
