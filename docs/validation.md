@@ -103,8 +103,11 @@ M8 validation should progress through increasingly risky pilots:
    arousal guard events, scheduler events, and clear limitations. Use
    `docs/pilot4_low_volume_cueing.md` and `muse-tmr run-pilot4-cueing`; real audio
    requires an explicit backend such as `system` and a saved volume calibration.
-5. Full-night exploratory session: require the recording bundle, scheduler logs, dream
-   report, retest, and cued-vs-uncued analysis output before interpreting any deltas.
+5. Full-night exploratory session: require the Pilot 4 safety setup plus a TLR block,
+   recording bundle, scheduler logs, dream report, retest, and cued-vs-uncued analysis
+   output before interpreting any deltas. Use `docs/pilot5_full_night.md` and
+   `muse-tmr run-pilot5-full-night`; real audio requires an explicit backend such as
+   `system`.
 
 ## Reporting Language
 

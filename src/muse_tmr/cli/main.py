@@ -245,6 +245,49 @@ def build_parser() -> argparse.ArgumentParser:
     _add_openmuse_lsl_args(pilot4_parser)
     _add_muse_sdk_args(pilot4_parser)
 
+    pilot5_parser = subparsers.add_parser(
+        "run-pilot5-full-night",
+        help="Run an M8 Pilot 5 full night with TLR block plus puzzle cues.",
+    )
+    pilot5_parser.add_argument("--source", choices=("amused", "openmuse", "sdk"), default="amused")
+    pilot5_parser.add_argument("--address", help="Muse BLE address. If omitted, discovery is used.")
+    pilot5_parser.add_argument("--name-filter", default="Muse")
+    pilot5_parser.add_argument("--preset", default="p1034")
+    pilot5_parser.add_argument("--duration-hours", type=float, default=8.0)
+    pilot5_parser.add_argument("--duration-seconds", type=float)
+    pilot5_parser.add_argument("--output-dir", type=Path, required=True, help="Pilot output directory.")
+    pilot5_parser.add_argument("--catalog", type=Path, required=True, help="Puzzle catalog .json path.")
+    pilot5_parser.add_argument("--session", type=Path, required=True, help="Night puzzle session .json path.")
+    pilot5_parser.add_argument("--assignment", type=Path, required=True, help="Cued/uncued assignment .json path.")
+    pilot5_parser.add_argument("--cue-library", type=Path, required=True, help="Cue metadata library .json path.")
+    pilot5_parser.add_argument("--tlr-block", type=Path, required=True, help="TLR block plan .json path.")
+    pilot5_parser.add_argument("--calibration", type=Path, required=True, help="Volume calibration .json path.")
+    pilot5_parser.add_argument("--device-name", help="Selected calibration device. Defaults to latest.")
+    pilot5_parser.add_argument(
+        "--backend",
+        choices=("system", "afplay", "dry-run", "mock"),
+        default="dry-run",
+        help="Playback backend. Use system for the actual Pilot 5 sleep run.",
+    )
+    pilot5_parser.add_argument("--hard-max-volume", type=float, default=0.20)
+    pilot5_parser.add_argument("--default-volume", type=float, default=0.02)
+    pilot5_parser.add_argument("--fade-in-seconds", type=float, default=0.25)
+    pilot5_parser.add_argument("--fade-out-seconds", type=float, default=0.25)
+    pilot5_parser.add_argument("--emergency-stop-file", type=Path)
+    pilot5_parser.add_argument("--epoch-seconds", type=float, default=30.0)
+    pilot5_parser.add_argument("--stride-seconds", type=float, default=30.0)
+    pilot5_parser.add_argument("--enter-threshold", type=float, default=0.70)
+    pilot5_parser.add_argument("--exit-threshold", type=float, default=0.45)
+    pilot5_parser.add_argument("--min-stable-seconds", type=float, default=60.0)
+    pilot5_parser.add_argument("--gate-cooldown-seconds", type=float, default=120.0)
+    pilot5_parser.add_argument("--puzzle-cue-interval-seconds", type=float, default=30.0)
+    pilot5_parser.add_argument("--scheduler-cooldown-seconds", type=float, default=120.0)
+    pilot5_parser.add_argument("--max-puzzle-cues-per-block", type=int, default=4)
+    pilot5_parser.add_argument("--allow-short", action="store_true", help="Allow short smoke-test cueing runs.")
+    pilot5_parser.add_argument("--quiet", action="store_true")
+    _add_openmuse_lsl_args(pilot5_parser)
+    _add_muse_sdk_args(pilot5_parser)
+
     awakening_parser = subparsers.add_parser(
         "log-pilot4-awakening",
         help="Append a manual awakening marker to a Pilot 4 awakening_events.jsonl file.",
@@ -496,6 +539,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         return asyncio.run(_simulate_replay_cues(args))
     if args.command == "run-pilot4-cueing":
         return asyncio.run(_run_pilot4_cueing(args))
+    if args.command == "run-pilot5-full-night":
+        return asyncio.run(_run_pilot5_full_night(args))
     if args.command == "log-pilot4-awakening":
         return _log_pilot4_awakening(args)
     if args.command == "list-cues":
@@ -898,6 +943,36 @@ async def _simulate_replay_cues(args: argparse.Namespace) -> int:
 
 
 async def _run_pilot4_cueing(args: argparse.Namespace) -> int:
+    return await _run_live_cueing_pilot(
+        args,
+        command_label="pilot4 cueing",
+        pilot_id="m8_pilot4_low_volume_rem_gated_cueing",
+        summary_filename="pilot4_summary.json",
+        enable_tlr_block=False,
+        require_tlr_block=False,
+    )
+
+
+async def _run_pilot5_full_night(args: argparse.Namespace) -> int:
+    return await _run_live_cueing_pilot(
+        args,
+        command_label="pilot5 full-night",
+        pilot_id="m8_pilot5_full_night_tlr_puzzle_cueing",
+        summary_filename="pilot5_summary.json",
+        enable_tlr_block=True,
+        require_tlr_block=True,
+    )
+
+
+async def _run_live_cueing_pilot(
+    args: argparse.Namespace,
+    *,
+    command_label: str,
+    pilot_id: str,
+    summary_filename: str,
+    enable_tlr_block: bool,
+    require_tlr_block: bool,
+) -> int:
     from muse_tmr.audio import load_cue_library, load_volume_calibrations
     from muse_tmr.features import EpochConfig
     from muse_tmr.models import RemGateConfig
@@ -906,6 +981,7 @@ async def _run_pilot4_cueing(args: argparse.Namespace) -> int:
         load_night_puzzle_session,
         load_puzzle_catalog,
         load_puzzle_cue_assignment,
+        load_tlr_block_plan,
     )
     from muse_tmr.protocol.arousal_guard import ArousalGuardConfig
     from muse_tmr.validation import Pilot4CueingConfig, run_pilot4_cueing_night
@@ -952,9 +1028,17 @@ async def _run_pilot4_cueing(args: argparse.Namespace) -> int:
             puzzle_cue_interval_seconds=args.puzzle_cue_interval_seconds,
             cooldown_seconds=args.scheduler_cooldown_seconds,
             max_puzzle_cues_per_block=args.max_puzzle_cues_per_block,
-            enable_tlr_block=False,
+            enable_tlr_block=enable_tlr_block,
         ),
         arousal_guard_config=ArousalGuardConfig(),
+        pilot_id=pilot_id,
+        summary_filename=summary_filename,
+        require_tlr_block=require_tlr_block,
+    )
+    tlr_block_plan = (
+        load_tlr_block_plan(_resolve_output_path(args.tlr_block))
+        if enable_tlr_block
+        else None
     )
     source = _build_source(args, duration_seconds=int(duration_seconds))
     summary = await run_pilot4_cueing_night(
@@ -965,12 +1049,15 @@ async def _run_pilot4_cueing(args: argparse.Namespace) -> int:
         assignment=load_puzzle_cue_assignment(_resolve_output_path(args.assignment)),
         cue_library=load_cue_library(_resolve_output_path(args.cue_library)),
         calibration=calibration,
+        tlr_block_plan=tlr_block_plan,
     )
     print(
-        "pilot4 cueing complete "
+        f"{command_label} complete "
         f"passed={summary.passed} "
         f"epochs={summary.epoch_count} "
         f"scheduler_play={summary.cue_play_count} "
+        f"tlr_play={summary.tlr_cue_play_count} "
+        f"puzzle_play={summary.puzzle_cue_play_count} "
         f"audio_status={dict(summary.audio_status_counts)} "
         f"max_effective_volume={summary.max_effective_volume} "
         f"emergency_stop={summary.emergency_stop_path} "

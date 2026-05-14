@@ -528,6 +528,30 @@ requires volume calibration, enforces the comfortable-volume cap, logs scheduler
 arousal, audio, awakening, and emergency-stop artifacts, and only sends playback
 requests for scheduler `play` events after stable REM.
 
+M8 Pilot 5 full-night TLR plus puzzle cueing:
+
+```bash
+muse-tmr run-pilot5-full-night \
+  --source amused \
+  --address "$MUSE_ADDR" \
+  --duration-hours 8 \
+  --output-dir data/recordings/pilot5_full_night_<timestamp> \
+  --catalog data/protocol/puzzle_catalog.json \
+  --session data/protocol/night-001_puzzles.json \
+  --assignment data/protocol/night-001_assignment.json \
+  --cue-library data/cues/starter.json \
+  --tlr-block data/protocol/night-001_tlr_block.json \
+  --calibration data/calibration/volume_calibration.json \
+  --device-name "Sleep Headphones" \
+  --backend system \
+  --default-volume 0.02
+```
+
+See `docs/pilot5_full_night.md` for the full runbook. Pilot 5 requires the Pilot 4
+safety setup plus a TLR block plan, writes `pilot5_summary.json`, and expects the
+morning dream report, blind puzzle retest, and cued-vs-uncued analysis before any
+behavioral interpretation.
+
 > **Finally!** Direct BLE connection to Muse S without proprietary SDKs. We're quite *amused* that we cracked the protocol nobody else has published online!
 
 ## 🎉 The Real Story
