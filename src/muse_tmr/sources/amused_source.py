@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import asyncio
+import datetime as dt
 import json
 import subprocess
 import sys
 import time
-from typing import AsyncIterator, Callable, Optional, Sequence
+from typing import Any, AsyncIterator, Callable, Mapping, Optional, Sequence
 
 from muse_realtime_decoder import DecodedData
 from muse_stream_client import MuseStreamClient
@@ -160,6 +161,25 @@ class AmusedSource(BaseMuseSource):
         self._stream_task = None
         self._stream_loop = None
 
+    def diagnostics(self) -> Mapping[str, Any]:
+        decoder_stats = None
+        if self.client is not None and self.client.decoder is not None:
+            decoder_stats = _json_safe(self.client.decoder.get_stats())
+
+        return {
+            "source": "amused",
+            "address": self.address,
+            "packet_count": self.packet_count,
+            "frame_count": self.frame_count,
+            "last_packet_age_seconds": (
+                time.monotonic() - self.last_packet_monotonic
+                if self.last_packet_monotonic is not None
+                else None
+            ),
+            "disconnect_reason": self.disconnect_reason,
+            "decoder": decoder_stats,
+        }
+
     async def _run_client(self) -> None:
         assert self.client is not None
         assert self.address is not None
@@ -243,3 +263,13 @@ def _discover_muse_devices_subprocess() -> Sequence[MuseDeviceInfo]:
         )
         for device in payload
     ]
+
+
+def _json_safe(value: Any) -> Any:
+    if isinstance(value, dt.datetime):
+        return value.isoformat()
+    if isinstance(value, Mapping):
+        return {str(key): _json_safe(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_json_safe(item) for item in value]
+    return value

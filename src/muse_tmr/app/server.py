@@ -112,6 +112,28 @@ class LocalMuseAppState:
             snapshot = self._contact_snapshot_unlocked(advance_mock=False)
             return self._contact_gate.update(snapshot).to_dict()
 
+    def diagnostics(self) -> Mapping[str, Any]:
+        with self._lock:
+            source = self._source
+            state = self._state_unlocked()
+            contact = (
+                self._last_contact_snapshot.to_dict()
+                if self._last_contact_snapshot is not None
+                else None
+            )
+
+        source_diagnostics = (
+            source.diagnostics()
+            if source is not None and hasattr(source, "diagnostics")
+            else None
+        )
+        return {
+            "service": "muse-tmr-local-app",
+            "state": state,
+            "contact": contact,
+            "source_diagnostics": source_diagnostics,
+        }
+
     def arm_gate(self) -> Mapping[str, Any]:
         with self._lock:
             snapshot = self._contact_snapshot_unlocked(advance_mock=False)
@@ -317,6 +339,9 @@ class LocalMuseAppHandler(BaseHTTPRequestHandler):
             return
         if path == "/api/muse/gate":
             self._write_json(self.server.app_state.gate())
+            return
+        if path == "/api/muse/diagnostics":
+            self._write_json(self.server.app_state.diagnostics())
             return
         self._serve_static()
 

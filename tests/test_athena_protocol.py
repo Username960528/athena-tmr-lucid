@@ -235,6 +235,35 @@ class TestPayloadParsing(unittest.TestCase):
         self.assertEqual(len(result["ACCGYRO"]), 1)
         self.assertEqual(len(result["OPTICS"]), 1)
 
+    def test_inspect_payload_reports_tags_and_types(self):
+        """Payload diagnostics should count TAGs without decoding values."""
+        packet = build_tag_packet(
+            proto.TAG_EEG_4CH, bytes(28),
+            extra_subpackets=[
+                (proto.TAG_ACCGYRO, bytes(36)),
+                (proto.TAG_OPTICS_8CH, bytes(40)),
+            ]
+        )
+
+        result = proto.inspect_payload(packet)
+
+        self.assertEqual(result["tags"], [proto.TAG_EEG_4CH, proto.TAG_ACCGYRO, proto.TAG_OPTICS_8CH])
+        self.assertEqual(result["decoded_tag_types"], ["EEG", "ACCGYRO", "OPTICS"])
+        self.assertEqual(result["unknown_tags"], [])
+        self.assertFalse(result["truncated"])
+
+    def test_inspect_payload_reports_unknown_and_truncated(self):
+        """Payload diagnostics should explain malformed notifications."""
+        unknown = bytearray(14)
+        unknown[9] = 0x99
+
+        unknown_result = proto.inspect_payload(bytes(unknown) + bytes(28))
+        truncated_result = proto.inspect_payload(build_tag_packet(proto.TAG_EEG_4CH, bytes(4)))
+
+        self.assertEqual(unknown_result["unknown_tags"], [0x99])
+        self.assertFalse(unknown_result["truncated"])
+        self.assertTrue(truncated_result["truncated"])
+
     def test_short_payload_returns_empty(self):
         """Payload shorter than header returns empty result"""
         result = proto.parse_payload(bytes(10))

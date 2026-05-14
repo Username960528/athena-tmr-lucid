@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import datetime as dt
+import json
 import os
 import sys
 from pathlib import Path
@@ -50,6 +51,11 @@ def build_parser() -> argparse.ArgumentParser:
     stream_parser.add_argument("--name-filter", default="Muse")
     stream_parser.add_argument("--preset", default="p1034")
     stream_parser.add_argument("--duration-seconds", type=int, default=3600)
+    stream_parser.add_argument(
+        "--debug-stats",
+        action="store_true",
+        help="Print source/decoder diagnostics after the stream completes.",
+    )
     stream_parser.add_argument("--quiet", action="store_true")
     _add_openmuse_lsl_args(stream_parser)
     _add_muse_sdk_args(stream_parser)
@@ -619,14 +625,20 @@ async def _discover(args: argparse.Namespace) -> int:
 
 async def _stream(args: argparse.Namespace) -> int:
     source = _build_source(args, duration_seconds=args.duration_seconds)
-    metadata = await source.connect()
     frame_count = 0
     modality_counts = {}
+    metadata = None
     try:
+        metadata = await source.connect()
         async for frame in source.stream():
             frame_count += 1
             for modality in frame.modalities():
                 modality_counts[modality] = modality_counts.get(modality, 0) + 1
+    except Exception as exc:
+        if args.debug_stats:
+            _print_stream_diagnostics(source)
+        print(f"stream failed error={exc}", file=sys.stderr)
+        return 1
     finally:
         await source.stop()
 
@@ -634,7 +646,14 @@ async def _stream(args: argparse.Namespace) -> int:
         f"stream complete source={metadata.source_name} "
         f"device={metadata.device_name} frames={frame_count} modalities={modality_counts}"
     )
+    if args.debug_stats:
+        _print_stream_diagnostics(source)
     return 0
+
+
+def _print_stream_diagnostics(source) -> None:
+    diagnostics = source.diagnostics() if hasattr(source, "diagnostics") else {}
+    print(f"stream diagnostics={json.dumps(diagnostics, sort_keys=True)}")
 
 
 async def _replay(args: argparse.Namespace) -> int:

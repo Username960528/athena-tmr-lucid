@@ -98,6 +98,7 @@ class ChannelContactState:
             "channel": self.channel,
             "status": self.status,
             "fill": self.fill,
+            "quality_score": self.fill,
             "coverage": self.coverage,
             "sample_count": self.sample_count,
             "reason_codes": list(self.reason_codes),

@@ -334,6 +334,88 @@ def decode_subpacket(tag: int, data: bytes) -> Optional[dict]:
     }
 
 
+def inspect_payload(payload: bytes) -> Dict[str, object]:
+    """Inspect TAG layout without decoding sensor values.
+
+    This is intentionally lightweight so live diagnostics can count BLE
+    notification structure, unknown TAGs, and truncated payloads even when
+    decoding later returns no sensor samples.
+    """
+    tags: List[int] = []
+    unknown_tags: List[int] = []
+    decoded_tag_types: List[str] = []
+    truncated = False
+    short_payload = len(payload) < HEADER_SIZE + 1
+    offset = 0
+
+    if short_payload:
+        return {
+            "tags": tags,
+            "unknown_tags": unknown_tags,
+            "decoded_tag_types": decoded_tag_types,
+            "truncated": True,
+            "short_payload": True,
+            "bytes_consumed": 0,
+            "payload_size": len(payload),
+        }
+
+    first_tag = payload[9]
+    tags.append(first_tag)
+    config = SENSOR_CONFIG.get(first_tag)
+    if config is None:
+        unknown_tags.append(first_tag)
+        return {
+            "tags": tags,
+            "unknown_tags": unknown_tags,
+            "decoded_tag_types": decoded_tag_types,
+            "truncated": False,
+            "short_payload": False,
+            "bytes_consumed": HEADER_SIZE,
+            "payload_size": len(payload),
+        }
+
+    data_len = config[3]
+    data_end = HEADER_SIZE + data_len
+    if data_end > len(payload):
+        truncated = True
+        offset = HEADER_SIZE
+    else:
+        decoded_tag_types.append(config[0])
+        offset = data_end
+
+    while not truncated and offset < len(payload):
+        if offset + 5 > len(payload):
+            truncated = True
+            break
+
+        tag = payload[offset]
+        tags.append(tag)
+        cfg = SENSOR_CONFIG.get(tag)
+        if cfg is None:
+            unknown_tags.append(tag)
+            break
+
+        data_len = cfg[3]
+        data_start = offset + 5
+        data_end = data_start + data_len
+        if data_end > len(payload):
+            truncated = True
+            break
+
+        decoded_tag_types.append(cfg[0])
+        offset = data_end
+
+    return {
+        "tags": tags,
+        "unknown_tags": unknown_tags,
+        "decoded_tag_types": decoded_tag_types,
+        "truncated": truncated,
+        "short_payload": short_payload,
+        "bytes_consumed": offset,
+        "payload_size": len(payload),
+    }
+
+
 # ---------------------------------------------------------------------------
 # Payload parser
 # ---------------------------------------------------------------------------
