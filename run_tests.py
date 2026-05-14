@@ -26,6 +26,7 @@ def run_fast_tests():
         'tests.test_ppg_fnirs_fast',  # Fast version
         'tests.test_sample_types',
         'tests.test_cli',
+        'tests.test_local_app',
         'tests.test_audio_player',
         'tests.test_cue_library',
         'tests.test_volume_calibration',
@@ -39,6 +40,8 @@ def run_fast_tests():
         'tests.test_imu_features',
         'tests.test_ppg_features',
         'tests.test_contact',
+        'tests.test_contact_monitor',
+        'tests.test_contact_gate',
         'tests.test_rem_detector',
         'tests.test_rem_annotations',
         'tests.test_personal_rem_classifier',

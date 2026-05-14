@@ -23,6 +23,21 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers = parser.add_subparsers(dest="command")
     subparsers.add_parser("status", help="Show project status and configured components.")
 
+    app_parser = subparsers.add_parser("app", help="Run the local Muse setup web app.")
+    app_parser.add_argument("--source", choices=("mock", "amused"), default="mock")
+    app_parser.add_argument("--host", default="127.0.0.1")
+    app_parser.add_argument("--port", type=int, default=8765)
+    app_parser.add_argument("--address", help="Muse BLE address. If omitted, discovery is used.")
+    app_parser.add_argument("--name-filter", default="Muse")
+    app_parser.add_argument("--preset", default="p1034")
+    app_parser.add_argument(
+        "--mock-scenario",
+        default="mixed_fair_good",
+        help="Mock contact scenario for local UI development.",
+    )
+    app_parser.add_argument("--mock-interval-seconds", type=float, default=1.0)
+    app_parser.add_argument("--contact-stability-seconds", type=float, default=5.0)
+
     discover_parser = subparsers.add_parser("discover", help="Discover Muse devices.")
     discover_parser.add_argument("--source", choices=("amused", "openmuse", "sdk"), default="amused")
     discover_parser.add_argument("--name-filter", default="Muse")
@@ -513,6 +528,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     if args.command == "status":
         print("Muse REM-TMR project scaffold is installed.")
         return 0
+    if args.command == "app":
+        return _run_app(args)
     if args.command == "discover":
         return asyncio.run(_discover(args))
     if args.command == "stream":
@@ -572,6 +589,24 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
     parser.print_help()
     return 0
+
+
+def _run_app(args: argparse.Namespace) -> int:
+    from muse_tmr.app import AppConfig, run_local_app
+
+    return run_local_app(
+        AppConfig(
+            host=args.host,
+            port=args.port,
+            source=args.source,
+            address=args.address,
+            name_filter=args.name_filter,
+            preset=args.preset,
+            mock_scenario=args.mock_scenario,
+            mock_interval_seconds=args.mock_interval_seconds,
+            gate_stability_seconds=args.contact_stability_seconds,
+        )
+    )
 
 
 async def _discover(args: argparse.Namespace) -> int:

@@ -80,6 +80,7 @@ Issues = "https://github.com/nexon33/amused/issues"
 [tool.setuptools]
 packages = [
     "muse_tmr",
+    "muse_tmr.app",
     "muse_tmr.audio",
     "muse_tmr.cli",
     "muse_tmr.data",
@@ -114,6 +115,7 @@ muse_tmr = "src/muse_tmr"
 
 [tool.setuptools.package-data]
 "*" = ["*.txt", "*.md"]
+"muse_tmr.app" = ["static/*.html", "static/*.css", "static/*.js"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
