@@ -40,13 +40,22 @@ def build_parser() -> argparse.ArgumentParser:
     app_parser.add_argument("--contact-stability-seconds", type=float, default=5.0)
 
     discover_parser = subparsers.add_parser("discover", help="Discover Muse devices.")
-    discover_parser.add_argument("--source", choices=("amused", "openmuse", "sdk"), default="amused")
+    discover_parser.add_argument(
+        "--source",
+        choices=("amused", "brainflow", "openmuse", "sdk"),
+        default="amused",
+    )
     discover_parser.add_argument("--name-filter", default="Muse")
+    _add_brainflow_args(discover_parser)
     _add_openmuse_lsl_args(discover_parser)
     _add_muse_sdk_args(discover_parser)
 
     stream_parser = subparsers.add_parser("stream", help="Stream Muse frames from a source.")
-    stream_parser.add_argument("--source", choices=("amused", "openmuse", "sdk"), default="amused")
+    stream_parser.add_argument(
+        "--source",
+        choices=("amused", "brainflow", "openmuse", "sdk"),
+        default="amused",
+    )
     stream_parser.add_argument("--address", help="Muse BLE address. If omitted, discovery is used.")
     stream_parser.add_argument("--name-filter", default="Muse")
     stream_parser.add_argument("--preset", default="p1034")
@@ -57,6 +66,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="Print source/decoder diagnostics after the stream completes.",
     )
     stream_parser.add_argument("--quiet", action="store_true")
+    _add_brainflow_args(stream_parser)
     _add_openmuse_lsl_args(stream_parser)
     _add_muse_sdk_args(stream_parser)
 
@@ -228,7 +238,11 @@ def build_parser() -> argparse.ArgumentParser:
         "run-pilot4-cueing",
         help="Run an M8 Pilot 4 low-volume REM-gated cueing night.",
     )
-    pilot4_parser.add_argument("--source", choices=("amused", "openmuse", "sdk"), default="amused")
+    pilot4_parser.add_argument(
+        "--source",
+        choices=("amused", "brainflow", "openmuse", "sdk"),
+        default="amused",
+    )
     pilot4_parser.add_argument("--address", help="Muse BLE address. If omitted, discovery is used.")
     pilot4_parser.add_argument("--name-filter", default="Muse")
     pilot4_parser.add_argument("--preset", default="p1034")
@@ -263,6 +277,7 @@ def build_parser() -> argparse.ArgumentParser:
     pilot4_parser.add_argument("--max-puzzle-cues-per-block", type=int, default=4)
     pilot4_parser.add_argument("--allow-short", action="store_true", help="Allow short smoke-test cueing runs.")
     pilot4_parser.add_argument("--quiet", action="store_true")
+    _add_brainflow_args(pilot4_parser)
     _add_openmuse_lsl_args(pilot4_parser)
     _add_muse_sdk_args(pilot4_parser)
 
@@ -270,7 +285,11 @@ def build_parser() -> argparse.ArgumentParser:
         "run-pilot5-full-night",
         help="Run an M8 Pilot 5 full night with TLR block plus puzzle cues.",
     )
-    pilot5_parser.add_argument("--source", choices=("amused", "openmuse", "sdk"), default="amused")
+    pilot5_parser.add_argument(
+        "--source",
+        choices=("amused", "brainflow", "openmuse", "sdk"),
+        default="amused",
+    )
     pilot5_parser.add_argument("--address", help="Muse BLE address. If omitted, discovery is used.")
     pilot5_parser.add_argument("--name-filter", default="Muse")
     pilot5_parser.add_argument("--preset", default="p1034")
@@ -306,6 +325,7 @@ def build_parser() -> argparse.ArgumentParser:
     pilot5_parser.add_argument("--max-puzzle-cues-per-block", type=int, default=4)
     pilot5_parser.add_argument("--allow-short", action="store_true", help="Allow short smoke-test cueing runs.")
     pilot5_parser.add_argument("--quiet", action="store_true")
+    _add_brainflow_args(pilot5_parser)
     _add_openmuse_lsl_args(pilot5_parser)
     _add_muse_sdk_args(pilot5_parser)
 
@@ -506,7 +526,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     record_parser = subparsers.add_parser("record", help="Record an overnight Muse session.")
-    record_parser.add_argument("--source", choices=("amused", "openmuse", "sdk"), default="amused")
+    record_parser.add_argument(
+        "--source",
+        choices=("amused", "brainflow", "openmuse", "sdk"),
+        default="amused",
+    )
     record_parser.add_argument("--address", help="Muse BLE address. If omitted, discovery is used.")
     record_parser.add_argument("--name-filter", default="Muse")
     record_parser.add_argument("--preset", default="p1034")
@@ -522,6 +546,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     record_parser.add_argument("--allow-short", action="store_true", help="Allow short smoke-test recordings.")
     record_parser.add_argument("--quiet", action="store_true")
+    _add_brainflow_args(record_parser)
     _add_openmuse_lsl_args(record_parser)
     _add_muse_sdk_args(record_parser)
     return parser
@@ -1546,6 +1571,23 @@ def _build_source(args: argparse.Namespace, duration_seconds: int):
             )
         )
 
+    if getattr(args, "source", "amused") == "brainflow":
+        from muse_tmr.sources.brainflow_source import BrainFlowSource, BrainFlowSourceConfig
+
+        return BrainFlowSource(
+            BrainFlowSourceConfig(
+                board_name=getattr(args, "brainflow_board", "MUSE_S_ATHENA_BOARD"),
+                preset=getattr(args, "brainflow_preset", "p1041"),
+                low_latency=not getattr(args, "brainflow_no_low_latency", False),
+                address=getattr(args, "address", None),
+                serial_number=getattr(args, "brainflow_serial_number", None),
+                name_filter=getattr(args, "name_filter", "Muse"),
+                duration_seconds=duration_seconds,
+                poll_interval_seconds=getattr(args, "brainflow_poll_interval", 0.05),
+                max_chunk_samples=getattr(args, "brainflow_chunk_samples", 256),
+            )
+        )
+
     from muse_tmr.sources.amused_source import AmusedSource
 
     return AmusedSource(
@@ -1555,6 +1597,19 @@ def _build_source(args: argparse.Namespace, duration_seconds: int):
         duration_seconds=duration_seconds,
         verbose=not getattr(args, "quiet", False),
     )
+
+
+def _add_brainflow_args(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--brainflow-board", default="MUSE_S_ATHENA_BOARD")
+    parser.add_argument("--brainflow-preset", default="p1041")
+    parser.add_argument("--brainflow-serial-number")
+    parser.add_argument(
+        "--brainflow-no-low-latency",
+        action="store_true",
+        help="Disable BrainFlow's low_latency option for Muse S Athena.",
+    )
+    parser.add_argument("--brainflow-poll-interval", type=float, default=0.05)
+    parser.add_argument("--brainflow-chunk-samples", type=int, default=256)
 
 
 def _add_openmuse_lsl_args(parser: argparse.ArgumentParser) -> None:

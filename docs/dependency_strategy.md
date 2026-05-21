@@ -27,3 +27,11 @@ Pinned upstream baseline:
 ## Contribution Policy
 
 Contribute general Muse BLE fixes upstream when they are not specific to REM-TMR/TLR. Keep REM detection, cue scheduling, reports, validation, and sleep-protocol code in this repository.
+
+## BrainFlow Policy
+
+BrainFlow is an optional acquisition adapter, not a replacement foundation for this
+repository. Use the released `brainflow>=5.22.1` package by default. A personal
+BrainFlow fork may be used to prototype or validate Muse S Athena fixes, but only pin
+this project to a git dependency temporarily when a live-smoke blocker cannot wait for
+an upstream BrainFlow release.

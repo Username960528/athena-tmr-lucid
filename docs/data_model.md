@@ -22,8 +22,8 @@ Each sample type supports `to_dict()` and `from_dict()`. `MuseFrame` additionall
 ## Source Attribution
 
 Every sample and frame carries a `source` string. The amused-py adapter uses `amused`;
-the optional OpenMuse LSL adapter uses `openmuse`; future SDK adapters should use
-distinct source names.
+the optional OpenMuse LSL adapter uses `openmuse`; the optional BrainFlow adapter uses
+`brainflow`; future SDK adapters should use distinct source names.
 
 ## OpenMuse LSL Source
 
@@ -41,6 +41,26 @@ The adapter maps known OpenMuse stream names into `MuseFrame` modalities:
 
 LSL samples do not contain raw BLE packets, so `raw_packets` capability is false and
 recordings from this source may have `raw_packet_count=0`.
+
+## BrainFlow Source
+
+`muse_tmr.sources.brainflow_source.BrainFlowSource` is an optional adapter for
+BrainFlow's Muse S Athena support. It imports no BrainFlow package at module import
+time; install `brainflow>=5.22.1` through the `brainflow` extra before running
+`--source brainflow`.
+
+The adapter uses `MUSE_S_ATHENA_BOARD`, `p1041`, and low latency by default. It maps
+BrainFlow default, auxiliary, and ancillary presets into `MuseFrame` modalities:
+
+- EEG rows: `EEGSample`
+- BrainFlow `other_channels` from the default preset: `EEGSample` channels named `OTHER_*`
+- accelerometer and gyroscope rows: `IMUSample`
+- optical rows: `PPGSample` channels named `OPTICAL_*`
+- battery row: `BatterySample`
+
+BrainFlow samples do not contain raw BLE packets, so `raw_packets` capability is
+false. BrainFlow does not currently supply a derived heart-rate sample through this
+adapter; HR features should come from optics-derived PPG processing downstream.
 
 ## Muse SDK Source Stub
 

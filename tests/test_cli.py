@@ -111,6 +111,36 @@ class TestCli(unittest.TestCase):
         self.assertEqual(args.openmuse_eeg_stream, "Muse_EEG")
         self.assertEqual(args.openmuse_imu_stream, "Muse_ACCGYRO")
 
+    def test_stream_command_parses_brainflow_source(self):
+        args = build_parser().parse_args([
+            "stream",
+            "--source",
+            "brainflow",
+            "--address",
+            "AA:BB",
+            "--duration-seconds",
+            "5",
+            "--brainflow-preset",
+            "p1041",
+            "--brainflow-serial-number",
+            "Muse-Test",
+            "--brainflow-no-low-latency",
+            "--brainflow-poll-interval",
+            "0.1",
+            "--brainflow-chunk-samples",
+            "128",
+        ])
+
+        self.assertEqual(args.command, "stream")
+        self.assertEqual(args.source, "brainflow")
+        self.assertEqual(args.address, "AA:BB")
+        self.assertEqual(args.duration_seconds, 5)
+        self.assertEqual(args.brainflow_preset, "p1041")
+        self.assertEqual(args.brainflow_serial_number, "Muse-Test")
+        self.assertTrue(args.brainflow_no_low_latency)
+        self.assertEqual(args.brainflow_poll_interval, 0.1)
+        self.assertEqual(args.brainflow_chunk_samples, 128)
+
     def test_stream_command_parses_sdk_stub_source(self):
         args = build_parser().parse_args([
             "stream",
@@ -569,6 +599,20 @@ class TestCli(unittest.TestCase):
 
     def test_amused_source_import_does_not_cycle(self):
         self.assertEqual(AmusedSource.strategy, "forked-source")
+
+    def test_build_brainflow_source_does_not_require_brainflow_dependency(self):
+        args = build_parser().parse_args([
+            "stream",
+            "--source",
+            "brainflow",
+            "--duration-seconds",
+            "5",
+        ])
+
+        source = cli_main._build_source(args, duration_seconds=5)
+
+        self.assertEqual(source.source_name, "brainflow")
+        self.assertEqual(source.strategy, "optional-brainflow")
 
     def test_default_recording_dir_avoids_root_when_cwd_is_unusable(self):
         with patch("muse_tmr.cli.main.Path.cwd", return_value=Path("/")):

@@ -23,6 +23,12 @@ publishes Lab Streaming Layer streams; the adapter resolves stream names such as
 `Muse_EEG` and `Muse_ACCGYRO`, converts pulled samples into `MuseFrame` objects, and
 does not make OpenMuse or LSL packages mandatory for normal installation.
 
+`BrainFlowSource` is the optional BrainFlow acquisition source. It keeps BrainFlow as
+an adapter behind `BaseMuseSource`, targets `MUSE_S_ATHENA_BOARD`, and converts
+BrainFlow EEG, IMU, optics, and battery batches into the same `MuseFrame` contract.
+The direct amused-py BLE source remains the default until live smoke tests prove a
+BrainFlow path is more reliable for Muse S Athena.
+
 `MuseSdkSourceStub` reserves the future official SDK source interface without importing
 or bundling any proprietary SDK files. Runtime SDK operations fail with a policy error
 until a local-only integration is explicitly implemented.
