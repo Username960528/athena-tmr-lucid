@@ -8,6 +8,7 @@ import datetime as dt
 import json
 import os
 import sys
+import time
 from pathlib import Path
 from typing import Mapping, Optional, Sequence
 
@@ -69,6 +70,42 @@ def build_parser() -> argparse.ArgumentParser:
     _add_brainflow_args(stream_parser)
     _add_openmuse_lsl_args(stream_parser)
     _add_muse_sdk_args(stream_parser)
+
+    diagnostic_parser = subparsers.add_parser(
+        "diagnose-blink-artifacts",
+        help="Run a live blink/artifact diagnostic protocol and write a JSON metric report.",
+    )
+    diagnostic_parser.add_argument(
+        "--source",
+        choices=("amused", "brainflow"),
+        default="brainflow",
+    )
+    diagnostic_parser.add_argument("--address", help="Muse BLE address. If omitted, discovery is used.")
+    diagnostic_parser.add_argument("--name-filter", default="Muse")
+    diagnostic_parser.add_argument("--preset", default="p1034")
+    diagnostic_parser.add_argument(
+        "--output",
+        type=Path,
+        help="Output report .json path. Defaults under data/reports/.",
+    )
+    diagnostic_parser.add_argument("--settle-seconds", type=float, default=30.0)
+    diagnostic_parser.add_argument("--eyes-open-baseline-seconds", type=float, default=45.0)
+    diagnostic_parser.add_argument("--blink-seconds", type=float, default=20.0)
+    diagnostic_parser.add_argument("--recovery-open-seconds", type=float, default=30.0)
+    diagnostic_parser.add_argument("--jaw-clench-seconds", type=float, default=20.0)
+    diagnostic_parser.add_argument("--head-movement-seconds", type=float, default=20.0)
+    diagnostic_parser.add_argument("--eyes-closed-baseline-seconds", type=float, default=45.0)
+    diagnostic_parser.add_argument("--sample-rate-hz", type=float, default=256.0)
+    diagnostic_parser.add_argument("--center-window-seconds", type=float, default=5.0)
+    diagnostic_parser.add_argument("--highpass-cutoff-hz", type=float, default=0.5)
+    diagnostic_parser.add_argument("--window-seconds", type=float, default=1.0)
+    diagnostic_parser.add_argument(
+        "--non-interactive",
+        action="store_true",
+        help="Start each phase immediately instead of waiting for Enter.",
+    )
+    diagnostic_parser.add_argument("--quiet", action="store_true")
+    _add_brainflow_args(diagnostic_parser)
 
     replay_parser = subparsers.add_parser("replay", help="Replay a recorded Muse session.")
     replay_parser.add_argument("input", type=Path, help="Recording directory or raw_amused.bin path.")
@@ -565,6 +602,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         return asyncio.run(_discover(args))
     if args.command == "stream":
         return asyncio.run(_stream(args))
+    if args.command == "diagnose-blink-artifacts":
+        return asyncio.run(_diagnose_blink_artifacts(args))
     if args.command == "replay":
         return asyncio.run(_replay(args))
     if args.command == "annotate-template":
@@ -679,6 +718,104 @@ async def _stream(args: argparse.Namespace) -> int:
 def _print_stream_diagnostics(source) -> None:
     diagnostics = source.diagnostics() if hasattr(source, "diagnostics") else {}
     print(f"stream diagnostics={json.dumps(diagnostics, sort_keys=True)}")
+
+
+async def _diagnose_blink_artifacts(args: argparse.Namespace) -> int:
+    from muse_tmr.features import (
+        ArtifactDiagnosticConfig,
+        analyze_blink_artifact_phases,
+        default_blink_artifact_phases,
+    )
+
+    phases = default_blink_artifact_phases(
+        settle_seconds=args.settle_seconds,
+        eyes_open_baseline_seconds=args.eyes_open_baseline_seconds,
+        blink_seconds=args.blink_seconds,
+        recovery_open_seconds=args.recovery_open_seconds,
+        jaw_clench_seconds=args.jaw_clench_seconds,
+        head_movement_seconds=args.head_movement_seconds,
+        eyes_closed_baseline_seconds=args.eyes_closed_baseline_seconds,
+    )
+    config = ArtifactDiagnosticConfig(
+        sample_rate_hz=args.sample_rate_hz,
+        center_window_seconds=args.center_window_seconds,
+        highpass_cutoff_hz=args.highpass_cutoff_hz,
+        window_seconds=args.window_seconds,
+    )
+    output_path = (
+        _resolve_output_path(args.output)
+        if args.output is not None
+        else _default_blink_diagnostic_output(args.source)
+    )
+
+    source = _build_source(args, duration_seconds=0)
+    phase_frames = {}
+    metadata = None
+    try:
+        metadata = await source.connect()
+        stream = source.stream().__aiter__()
+        for phase in phases:
+            if not args.quiet:
+                print(
+                    f"PHASE_READY phase={phase.name} "
+                    f"duration={phase.duration_seconds:.1f}s "
+                    f"instruction={phase.instruction}"
+                )
+            if not args.non_interactive:
+                await asyncio.to_thread(input, "Press Enter to start this phase...")
+            if not args.quiet:
+                print(f"PHASE_START phase={phase.name}")
+            frames = await _collect_diagnostic_phase_frames(stream, phase.duration_seconds)
+            phase_frames[phase.name] = frames
+            if not args.quiet:
+                print(
+                    f"PHASE_DONE phase={phase.name} "
+                    f"frames={len(frames)} eeg_frames={_eeg_frame_count(frames)}"
+                )
+    finally:
+        await source.stop()
+
+    report = analyze_blink_artifact_phases(
+        phase_frames,
+        source=metadata.source_name if metadata is not None else args.source,
+        phases=phases,
+        config=config,
+    )
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(
+        json.dumps(report.to_dict(), indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    print(
+        "blink artifact diagnostic complete "
+        f"source={report.source} "
+        f"blink_detected={report.blink_summary.get('detected')} "
+        f"closed_eyes_present={report.closed_eyes_summary.get('present')} "
+        f"output={output_path}"
+    )
+    return 0
+
+
+async def _collect_diagnostic_phase_frames(stream, duration_seconds: float) -> tuple:
+    frames = []
+    deadline = time.monotonic() + duration_seconds
+    while time.monotonic() < deadline:
+        remaining = deadline - time.monotonic()
+        try:
+            frame = await asyncio.wait_for(
+                stream.__anext__(),
+                timeout=min(1.0, max(0.05, remaining + 0.05)),
+            )
+        except asyncio.TimeoutError:
+            continue
+        except StopAsyncIteration:
+            break
+        frames.append(frame)
+    return tuple(frames)
+
+
+def _eeg_frame_count(frames: Sequence[object]) -> int:
+    return sum(1 for frame in frames if getattr(frame, "eeg", None) is not None)
 
 
 async def _replay(args: argparse.Namespace) -> int:
@@ -1658,6 +1795,11 @@ def _openmuse_stream_names(args: argparse.Namespace) -> Mapping[str, tuple]:
         "heart_rate": (args.openmuse_heart_rate_stream, "Muse_HEART", "Muse_HEART_RATE"),
         "battery": (args.openmuse_battery_stream, "Muse_BATTERY", "Muse-Telemetry"),
     }
+
+
+def _default_blink_diagnostic_output(source: str) -> Path:
+    timestamp = dt.datetime.now().strftime("%Y%m%d_%H%M%S")
+    return _default_path_base() / "data" / "reports" / f"blink_artifacts_{source}_{timestamp}.json"
 
 
 def _default_recording_dir() -> Path:

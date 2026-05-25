@@ -153,6 +153,30 @@ class TestCli(unittest.TestCase):
         self.assertEqual(args.brainflow_stop_timeout, 5.0)
         self.assertEqual(args.brainflow_session_cooldown, 0.25)
 
+    def test_diagnose_blink_artifacts_command_parses_closed_eyes_phase(self):
+        args = build_parser().parse_args([
+            "diagnose-blink-artifacts",
+            "--source",
+            "brainflow",
+            "--output",
+            "data/reports/brainflow_blink.json",
+            "--eyes-open-baseline-seconds",
+            "45",
+            "--blink-seconds",
+            "20",
+            "--eyes-closed-baseline-seconds",
+            "45",
+            "--non-interactive",
+        ])
+
+        self.assertEqual(args.command, "diagnose-blink-artifacts")
+        self.assertEqual(args.source, "brainflow")
+        self.assertEqual(args.output, Path("data/reports/brainflow_blink.json"))
+        self.assertEqual(args.eyes_open_baseline_seconds, 45.0)
+        self.assertEqual(args.blink_seconds, 20.0)
+        self.assertEqual(args.eyes_closed_baseline_seconds, 45.0)
+        self.assertTrue(args.non_interactive)
+
     def test_stream_command_parses_sdk_stub_source(self):
         args = build_parser().parse_args([
             "stream",
