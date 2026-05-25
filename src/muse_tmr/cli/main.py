@@ -751,9 +751,13 @@ async def _diagnose_blink_artifacts(args: argparse.Namespace) -> int:
     source = _build_source(args, duration_seconds=0)
     phase_frames = {}
     metadata = None
+    stream_queue = asyncio.Queue()
+    stream_task = None
     try:
         metadata = await source.connect()
-        stream = source.stream().__aiter__()
+        stream_task = asyncio.create_task(
+            _pump_diagnostic_stream(source.stream(), stream_queue)
+        )
         for phase in phases:
             if not args.quiet:
                 print(
@@ -765,7 +769,12 @@ async def _diagnose_blink_artifacts(args: argparse.Namespace) -> int:
                 await asyncio.to_thread(input, "Press Enter to start this phase...")
             if not args.quiet:
                 print(f"PHASE_START phase={phase.name}")
-            frames = await _collect_diagnostic_phase_frames(stream, phase.duration_seconds)
+            _drain_diagnostic_queue(stream_queue)
+            frames = await _collect_diagnostic_phase_frames(
+                stream_queue,
+                stream_task,
+                phase.duration_seconds,
+            )
             phase_frames[phase.name] = frames
             if not args.quiet:
                 print(
@@ -773,6 +782,12 @@ async def _diagnose_blink_artifacts(args: argparse.Namespace) -> int:
                     f"frames={len(frames)} eeg_frames={_eeg_frame_count(frames)}"
                 )
     finally:
+        if stream_task is not None:
+            stream_task.cancel()
+            try:
+                await stream_task
+            except asyncio.CancelledError:
+                pass
         await source.stop()
 
     report = analyze_blink_artifact_phases(
@@ -796,22 +811,39 @@ async def _diagnose_blink_artifacts(args: argparse.Namespace) -> int:
     return 0
 
 
-async def _collect_diagnostic_phase_frames(stream, duration_seconds: float) -> tuple:
+async def _pump_diagnostic_stream(stream, queue: asyncio.Queue) -> None:
+    async for frame in stream:
+        await queue.put(frame)
+
+
+async def _collect_diagnostic_phase_frames(
+    queue: asyncio.Queue,
+    stream_task: asyncio.Task,
+    duration_seconds: float,
+) -> tuple:
     frames = []
     deadline = time.monotonic() + duration_seconds
     while time.monotonic() < deadline:
         remaining = deadline - time.monotonic()
         try:
-            frame = await asyncio.wait_for(
-                stream.__anext__(),
-                timeout=min(1.0, max(0.05, remaining + 0.05)),
-            )
+            frame = await asyncio.wait_for(queue.get(), timeout=min(0.5, max(0.05, remaining)))
         except asyncio.TimeoutError:
+            if stream_task.done():
+                exc = stream_task.exception()
+                if exc is not None:
+                    raise exc
+                break
             continue
-        except StopAsyncIteration:
-            break
         frames.append(frame)
     return tuple(frames)
+
+
+def _drain_diagnostic_queue(queue: asyncio.Queue) -> None:
+    while True:
+        try:
+            queue.get_nowait()
+        except asyncio.QueueEmpty:
+            break
 
 
 def _eeg_frame_count(frames: Sequence[object]) -> int:

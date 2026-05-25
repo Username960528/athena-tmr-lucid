@@ -1,3 +1,4 @@
+import asyncio
 import contextlib
 import io
 import unittest
@@ -671,6 +672,27 @@ class TestCli(unittest.TestCase):
 
 
 class TestCliStreamRuntime(unittest.IsolatedAsyncioTestCase):
+    async def test_diagnostic_phase_collection_does_not_cancel_slow_stream(self):
+        frame = object()
+        queue = asyncio.Queue()
+
+        async def slow_stream():
+            await asyncio.sleep(0.05)
+            yield frame
+
+        stream_task = asyncio.create_task(
+            cli_main._pump_diagnostic_stream(slow_stream(), queue)
+        )
+
+        frames = await cli_main._collect_diagnostic_phase_frames(
+            queue,
+            stream_task,
+            duration_seconds=0.2,
+        )
+
+        self.assertEqual(frames, (frame,))
+        self.assertTrue(stream_task.done())
+
     async def test_stream_debug_stats_prints_on_failure(self):
         args = build_parser().parse_args([
             "stream",
