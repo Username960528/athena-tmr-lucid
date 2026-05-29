@@ -1,3 +1,4 @@
+import asyncio
 import contextlib
 import io
 import unittest
@@ -110,6 +111,91 @@ class TestCli(unittest.TestCase):
         self.assertEqual(args.lsl_resolve_timeout, 2.5)
         self.assertEqual(args.openmuse_eeg_stream, "Muse_EEG")
         self.assertEqual(args.openmuse_imu_stream, "Muse_ACCGYRO")
+
+    def test_stream_command_parses_brainflow_source(self):
+        args = build_parser().parse_args([
+            "stream",
+            "--source",
+            "brainflow",
+            "--address",
+            "AA:BB",
+            "--duration-seconds",
+            "5",
+            "--brainflow-preset",
+            "p1041",
+            "--brainflow-serial-number",
+            "Muse-Test",
+            "--brainflow-no-low-latency",
+            "--brainflow-poll-interval",
+            "0.1",
+            "--brainflow-chunk-samples",
+            "128",
+            "--brainflow-connect-timeout",
+            "12",
+            "--brainflow-stream-start-timeout",
+            "7",
+            "--brainflow-stop-timeout",
+            "5",
+            "--brainflow-session-cooldown",
+            "0.25",
+        ])
+
+        self.assertEqual(args.command, "stream")
+        self.assertEqual(args.source, "brainflow")
+        self.assertEqual(args.address, "AA:BB")
+        self.assertEqual(args.duration_seconds, 5)
+        self.assertEqual(args.brainflow_preset, "p1041")
+        self.assertEqual(args.brainflow_serial_number, "Muse-Test")
+        self.assertTrue(args.brainflow_no_low_latency)
+        self.assertEqual(args.brainflow_poll_interval, 0.1)
+        self.assertEqual(args.brainflow_chunk_samples, 128)
+        self.assertEqual(args.brainflow_connect_timeout, 12.0)
+        self.assertEqual(args.brainflow_stream_start_timeout, 7.0)
+        self.assertEqual(args.brainflow_stop_timeout, 5.0)
+        self.assertEqual(args.brainflow_session_cooldown, 0.25)
+
+    def test_diagnose_blink_artifacts_command_parses_closed_eyes_phase(self):
+        args = build_parser().parse_args([
+            "diagnose-blink-artifacts",
+            "--source",
+            "brainflow",
+            "--output",
+            "data/reports/brainflow_blink.json",
+            "--eyes-open-baseline-seconds",
+            "45",
+            "--blink-seconds",
+            "20",
+            "--eyes-closed-baseline-seconds",
+            "45",
+            "--non-interactive",
+        ])
+
+        self.assertEqual(args.command, "diagnose-blink-artifacts")
+        self.assertEqual(args.source, "brainflow")
+        self.assertEqual(args.output, Path("data/reports/brainflow_blink.json"))
+        self.assertEqual(args.eyes_open_baseline_seconds, 45.0)
+        self.assertEqual(args.blink_seconds, 20.0)
+        self.assertEqual(args.eyes_closed_baseline_seconds, 45.0)
+        self.assertTrue(args.non_interactive)
+
+    def test_compare_source_diagnostics_command_parses_report_table_options(self):
+        args = build_parser().parse_args([
+            "compare-source-diagnostics",
+            "data/reports/brainflow_blink.json",
+            "data/reports/amused_blink.json",
+            "--output",
+            "data/reports/source_comparison.md",
+            "--format",
+            "markdown",
+        ])
+
+        self.assertEqual(args.command, "compare-source-diagnostics")
+        self.assertEqual(args.reports, [
+            Path("data/reports/brainflow_blink.json"),
+            Path("data/reports/amused_blink.json"),
+        ])
+        self.assertEqual(args.output, Path("data/reports/source_comparison.md"))
+        self.assertEqual(args.format, "markdown")
 
     def test_stream_command_parses_sdk_stub_source(self):
         args = build_parser().parse_args([
@@ -570,6 +656,22 @@ class TestCli(unittest.TestCase):
     def test_amused_source_import_does_not_cycle(self):
         self.assertEqual(AmusedSource.strategy, "forked-source")
 
+    def test_build_brainflow_source_does_not_require_brainflow_dependency(self):
+        args = build_parser().parse_args([
+            "stream",
+            "--source",
+            "brainflow",
+            "--duration-seconds",
+            "5",
+        ])
+
+        source = cli_main._build_source(args, duration_seconds=5)
+
+        self.assertEqual(source.source_name, "brainflow")
+        self.assertEqual(source.strategy, "optional-brainflow")
+        self.assertEqual(source.config.connect_timeout_seconds, 20.0)
+        self.assertEqual(source.config.session_cooldown_seconds, 2.0)
+
     def test_default_recording_dir_avoids_root_when_cwd_is_unusable(self):
         with patch("muse_tmr.cli.main.Path.cwd", return_value=Path("/")):
             output_dir = _default_recording_dir()
@@ -589,6 +691,27 @@ class TestCli(unittest.TestCase):
 
 
 class TestCliStreamRuntime(unittest.IsolatedAsyncioTestCase):
+    async def test_diagnostic_phase_collection_does_not_cancel_slow_stream(self):
+        frame = object()
+        queue = asyncio.Queue()
+
+        async def slow_stream():
+            await asyncio.sleep(0.05)
+            yield frame
+
+        stream_task = asyncio.create_task(
+            cli_main._pump_diagnostic_stream(slow_stream(), queue)
+        )
+
+        frames = await cli_main._collect_diagnostic_phase_frames(
+            queue,
+            stream_task,
+            duration_seconds=0.2,
+        )
+
+        self.assertEqual(frames, (frame,))
+        self.assertTrue(stream_task.done())
+
     async def test_stream_debug_stats_prints_on_failure(self):
         args = build_parser().parse_args([
             "stream",

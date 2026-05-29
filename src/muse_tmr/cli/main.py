@@ -8,6 +8,7 @@ import datetime as dt
 import json
 import os
 import sys
+import time
 from pathlib import Path
 from typing import Mapping, Optional, Sequence
 
@@ -40,13 +41,22 @@ def build_parser() -> argparse.ArgumentParser:
     app_parser.add_argument("--contact-stability-seconds", type=float, default=5.0)
 
     discover_parser = subparsers.add_parser("discover", help="Discover Muse devices.")
-    discover_parser.add_argument("--source", choices=("amused", "openmuse", "sdk"), default="amused")
+    discover_parser.add_argument(
+        "--source",
+        choices=("amused", "brainflow", "openmuse", "sdk"),
+        default="amused",
+    )
     discover_parser.add_argument("--name-filter", default="Muse")
+    _add_brainflow_args(discover_parser)
     _add_openmuse_lsl_args(discover_parser)
     _add_muse_sdk_args(discover_parser)
 
     stream_parser = subparsers.add_parser("stream", help="Stream Muse frames from a source.")
-    stream_parser.add_argument("--source", choices=("amused", "openmuse", "sdk"), default="amused")
+    stream_parser.add_argument(
+        "--source",
+        choices=("amused", "brainflow", "openmuse", "sdk"),
+        default="amused",
+    )
     stream_parser.add_argument("--address", help="Muse BLE address. If omitted, discovery is used.")
     stream_parser.add_argument("--name-filter", default="Muse")
     stream_parser.add_argument("--preset", default="p1034")
@@ -57,8 +67,67 @@ def build_parser() -> argparse.ArgumentParser:
         help="Print source/decoder diagnostics after the stream completes.",
     )
     stream_parser.add_argument("--quiet", action="store_true")
+    _add_brainflow_args(stream_parser)
     _add_openmuse_lsl_args(stream_parser)
     _add_muse_sdk_args(stream_parser)
+
+    diagnostic_parser = subparsers.add_parser(
+        "diagnose-blink-artifacts",
+        help="Run a live blink/artifact diagnostic protocol and write a JSON metric report.",
+    )
+    diagnostic_parser.add_argument(
+        "--source",
+        choices=("amused", "brainflow"),
+        default="brainflow",
+    )
+    diagnostic_parser.add_argument("--address", help="Muse BLE address. If omitted, discovery is used.")
+    diagnostic_parser.add_argument("--name-filter", default="Muse")
+    diagnostic_parser.add_argument("--preset", default="p1034")
+    diagnostic_parser.add_argument(
+        "--output",
+        type=Path,
+        help="Output report .json path. Defaults under data/reports/.",
+    )
+    diagnostic_parser.add_argument("--settle-seconds", type=float, default=30.0)
+    diagnostic_parser.add_argument("--eyes-open-baseline-seconds", type=float, default=45.0)
+    diagnostic_parser.add_argument("--blink-seconds", type=float, default=20.0)
+    diagnostic_parser.add_argument("--recovery-open-seconds", type=float, default=30.0)
+    diagnostic_parser.add_argument("--jaw-clench-seconds", type=float, default=20.0)
+    diagnostic_parser.add_argument("--head-movement-seconds", type=float, default=20.0)
+    diagnostic_parser.add_argument("--eyes-closed-baseline-seconds", type=float, default=45.0)
+    diagnostic_parser.add_argument("--sample-rate-hz", type=float, default=256.0)
+    diagnostic_parser.add_argument("--center-window-seconds", type=float, default=5.0)
+    diagnostic_parser.add_argument("--highpass-cutoff-hz", type=float, default=0.5)
+    diagnostic_parser.add_argument("--window-seconds", type=float, default=1.0)
+    diagnostic_parser.add_argument(
+        "--non-interactive",
+        action="store_true",
+        help="Start each phase immediately instead of waiting for Enter.",
+    )
+    diagnostic_parser.add_argument("--quiet", action="store_true")
+    _add_brainflow_args(diagnostic_parser)
+
+    compare_diagnostics_parser = subparsers.add_parser(
+        "compare-source-diagnostics",
+        help="Compare blink/artifact diagnostic JSON reports as a source quality table.",
+    )
+    compare_diagnostics_parser.add_argument(
+        "reports",
+        nargs="+",
+        type=Path,
+        help="Diagnostic report JSON paths from diagnose-blink-artifacts.",
+    )
+    compare_diagnostics_parser.add_argument(
+        "--output",
+        type=Path,
+        help="Optional comparison output path (.md, .csv, or .json).",
+    )
+    compare_diagnostics_parser.add_argument(
+        "--format",
+        choices=("markdown", "csv", "json"),
+        default="markdown",
+        help="Output format when --output is set. The console output is markdown.",
+    )
 
     replay_parser = subparsers.add_parser("replay", help="Replay a recorded Muse session.")
     replay_parser.add_argument("input", type=Path, help="Recording directory or raw_amused.bin path.")
@@ -228,7 +297,11 @@ def build_parser() -> argparse.ArgumentParser:
         "run-pilot4-cueing",
         help="Run an M8 Pilot 4 low-volume REM-gated cueing night.",
     )
-    pilot4_parser.add_argument("--source", choices=("amused", "openmuse", "sdk"), default="amused")
+    pilot4_parser.add_argument(
+        "--source",
+        choices=("amused", "brainflow", "openmuse", "sdk"),
+        default="amused",
+    )
     pilot4_parser.add_argument("--address", help="Muse BLE address. If omitted, discovery is used.")
     pilot4_parser.add_argument("--name-filter", default="Muse")
     pilot4_parser.add_argument("--preset", default="p1034")
@@ -263,6 +336,7 @@ def build_parser() -> argparse.ArgumentParser:
     pilot4_parser.add_argument("--max-puzzle-cues-per-block", type=int, default=4)
     pilot4_parser.add_argument("--allow-short", action="store_true", help="Allow short smoke-test cueing runs.")
     pilot4_parser.add_argument("--quiet", action="store_true")
+    _add_brainflow_args(pilot4_parser)
     _add_openmuse_lsl_args(pilot4_parser)
     _add_muse_sdk_args(pilot4_parser)
 
@@ -270,7 +344,11 @@ def build_parser() -> argparse.ArgumentParser:
         "run-pilot5-full-night",
         help="Run an M8 Pilot 5 full night with TLR block plus puzzle cues.",
     )
-    pilot5_parser.add_argument("--source", choices=("amused", "openmuse", "sdk"), default="amused")
+    pilot5_parser.add_argument(
+        "--source",
+        choices=("amused", "brainflow", "openmuse", "sdk"),
+        default="amused",
+    )
     pilot5_parser.add_argument("--address", help="Muse BLE address. If omitted, discovery is used.")
     pilot5_parser.add_argument("--name-filter", default="Muse")
     pilot5_parser.add_argument("--preset", default="p1034")
@@ -306,6 +384,7 @@ def build_parser() -> argparse.ArgumentParser:
     pilot5_parser.add_argument("--max-puzzle-cues-per-block", type=int, default=4)
     pilot5_parser.add_argument("--allow-short", action="store_true", help="Allow short smoke-test cueing runs.")
     pilot5_parser.add_argument("--quiet", action="store_true")
+    _add_brainflow_args(pilot5_parser)
     _add_openmuse_lsl_args(pilot5_parser)
     _add_muse_sdk_args(pilot5_parser)
 
@@ -506,7 +585,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     record_parser = subparsers.add_parser("record", help="Record an overnight Muse session.")
-    record_parser.add_argument("--source", choices=("amused", "openmuse", "sdk"), default="amused")
+    record_parser.add_argument(
+        "--source",
+        choices=("amused", "brainflow", "openmuse", "sdk"),
+        default="amused",
+    )
     record_parser.add_argument("--address", help="Muse BLE address. If omitted, discovery is used.")
     record_parser.add_argument("--name-filter", default="Muse")
     record_parser.add_argument("--preset", default="p1034")
@@ -522,6 +605,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     record_parser.add_argument("--allow-short", action="store_true", help="Allow short smoke-test recordings.")
     record_parser.add_argument("--quiet", action="store_true")
+    _add_brainflow_args(record_parser)
     _add_openmuse_lsl_args(record_parser)
     _add_muse_sdk_args(record_parser)
     return parser
@@ -540,6 +624,10 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         return asyncio.run(_discover(args))
     if args.command == "stream":
         return asyncio.run(_stream(args))
+    if args.command == "diagnose-blink-artifacts":
+        return asyncio.run(_diagnose_blink_artifacts(args))
+    if args.command == "compare-source-diagnostics":
+        return _compare_source_diagnostics(args)
     if args.command == "replay":
         return asyncio.run(_replay(args))
     if args.command == "annotate-template":
@@ -654,6 +742,213 @@ async def _stream(args: argparse.Namespace) -> int:
 def _print_stream_diagnostics(source) -> None:
     diagnostics = source.diagnostics() if hasattr(source, "diagnostics") else {}
     print(f"stream diagnostics={json.dumps(diagnostics, sort_keys=True)}")
+
+
+async def _diagnose_blink_artifacts(args: argparse.Namespace) -> int:
+    from muse_tmr.features import (
+        ArtifactDiagnosticConfig,
+        analyze_blink_artifact_phases,
+        default_blink_artifact_phases,
+    )
+
+    phases = default_blink_artifact_phases(
+        settle_seconds=args.settle_seconds,
+        eyes_open_baseline_seconds=args.eyes_open_baseline_seconds,
+        blink_seconds=args.blink_seconds,
+        recovery_open_seconds=args.recovery_open_seconds,
+        jaw_clench_seconds=args.jaw_clench_seconds,
+        head_movement_seconds=args.head_movement_seconds,
+        eyes_closed_baseline_seconds=args.eyes_closed_baseline_seconds,
+    )
+    config = ArtifactDiagnosticConfig(
+        sample_rate_hz=args.sample_rate_hz,
+        center_window_seconds=args.center_window_seconds,
+        highpass_cutoff_hz=args.highpass_cutoff_hz,
+        window_seconds=args.window_seconds,
+    )
+    output_path = (
+        _resolve_output_path(args.output)
+        if args.output is not None
+        else _default_blink_diagnostic_output(args.source)
+    )
+
+    source = _build_source(args, duration_seconds=0)
+    phase_frames = {}
+    metadata = None
+    stream_queue = asyncio.Queue()
+    stream_task = None
+    try:
+        metadata = await source.connect()
+        stream_task = asyncio.create_task(
+            _pump_diagnostic_stream(source.stream(), stream_queue)
+        )
+        for phase in phases:
+            if not args.quiet:
+                print(
+                    f"PHASE_READY phase={phase.name} "
+                    f"duration={phase.duration_seconds:.1f}s "
+                    f"instruction={phase.instruction}"
+                )
+            if not args.non_interactive:
+                await asyncio.to_thread(input, "Press Enter to start this phase...")
+            if not args.quiet:
+                print(f"PHASE_START phase={phase.name}")
+            _drain_diagnostic_queue(stream_queue)
+            frames = await _collect_diagnostic_phase_frames(
+                stream_queue,
+                stream_task,
+                phase.duration_seconds,
+            )
+            phase_frames[phase.name] = frames
+            if not args.quiet:
+                print(
+                    f"PHASE_DONE phase={phase.name} "
+                    f"frames={len(frames)} eeg_frames={_eeg_frame_count(frames)}"
+                )
+    finally:
+        if stream_task is not None:
+            stream_task.cancel()
+            try:
+                await stream_task
+            except asyncio.CancelledError:
+                pass
+        await source.stop()
+
+    report = analyze_blink_artifact_phases(
+        phase_frames,
+        source=metadata.source_name if metadata is not None else args.source,
+        phases=phases,
+        config=config,
+        source_metadata=_source_metadata_to_dict(metadata),
+        source_diagnostics=_source_diagnostics(source),
+        session_summary=_diagnostic_session_summary(output_path.stem, phase_frames),
+    )
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(
+        json.dumps(report.to_dict(), indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    print(
+        "blink artifact diagnostic complete "
+        f"source={report.source} "
+        f"blink_detected={report.blink_summary.get('detected')} "
+        f"closed_eyes_present={report.closed_eyes_summary.get('present')} "
+        f"output={output_path}"
+    )
+    return 0
+
+
+def _compare_source_diagnostics(args: argparse.Namespace) -> int:
+    from muse_tmr.reports import (
+        compare_source_diagnostic_reports,
+        format_source_diagnostic_markdown,
+        save_source_diagnostic_comparison,
+    )
+
+    report_paths = tuple(_resolve_output_path(path) for path in args.reports)
+    rows = compare_source_diagnostic_reports(report_paths)
+    print(format_source_diagnostic_markdown(rows))
+    if args.output is not None:
+        output_path = save_source_diagnostic_comparison(
+            rows,
+            _resolve_output_path(args.output),
+            output_format=args.format,
+        )
+        print(f"source diagnostic comparison saved output={output_path}")
+    return 0
+
+
+async def _pump_diagnostic_stream(stream, queue: asyncio.Queue) -> None:
+    async for frame in stream:
+        await queue.put(frame)
+
+
+async def _collect_diagnostic_phase_frames(
+    queue: asyncio.Queue,
+    stream_task: asyncio.Task,
+    duration_seconds: float,
+) -> tuple:
+    frames = []
+    deadline = time.monotonic() + duration_seconds
+    while time.monotonic() < deadline:
+        remaining = deadline - time.monotonic()
+        try:
+            frame = await asyncio.wait_for(queue.get(), timeout=min(0.5, max(0.05, remaining)))
+        except asyncio.TimeoutError:
+            if stream_task.done():
+                exc = stream_task.exception()
+                if exc is not None:
+                    raise exc
+                break
+            continue
+        frames.append(frame)
+    return tuple(frames)
+
+
+def _drain_diagnostic_queue(queue: asyncio.Queue) -> None:
+    while True:
+        try:
+            queue.get_nowait()
+        except asyncio.QueueEmpty:
+            break
+
+
+def _eeg_frame_count(frames: Sequence[object]) -> int:
+    return sum(1 for frame in frames if getattr(frame, "eeg", None) is not None)
+
+
+def _source_metadata_to_dict(metadata) -> Mapping[str, object]:
+    if metadata is None:
+        return {}
+    return {
+        "source_name": metadata.source_name,
+        "device_name": metadata.device_name,
+        "device_id": metadata.device_id,
+        "capabilities": dict(metadata.capabilities),
+        "metadata": dict(metadata.metadata or {}),
+    }
+
+
+def _source_diagnostics(source) -> Mapping[str, object]:
+    diagnostics = source.diagnostics() if hasattr(source, "diagnostics") else {}
+    return diagnostics if isinstance(diagnostics, Mapping) else {}
+
+
+def _diagnostic_session_summary(
+    session_id: str,
+    phase_frames: Mapping[str, Sequence[object]],
+) -> Mapping[str, object]:
+    phase_summaries = {}
+    total_modality_counts = {}
+    total_eeg_sample_counts = {}
+    total_frame_count = 0
+    for phase_name, frames in phase_frames.items():
+        modality_counts = {}
+        eeg_sample_counts = {}
+        for frame in frames:
+            total_frame_count += 1
+            for modality in frame.modalities():
+                modality_counts[modality] = modality_counts.get(modality, 0) + 1
+                total_modality_counts[modality] = total_modality_counts.get(modality, 0) + 1
+            if frame.eeg is not None:
+                for channel, values in frame.eeg.channels_uv.items():
+                    count = len(values)
+                    eeg_sample_counts[channel] = eeg_sample_counts.get(channel, 0) + count
+                    total_eeg_sample_counts[channel] = (
+                        total_eeg_sample_counts.get(channel, 0) + count
+                    )
+        phase_summaries[phase_name] = {
+            "frame_count": len(frames),
+            "modality_counts": modality_counts,
+            "eeg_sample_counts": eeg_sample_counts,
+        }
+    return {
+        "session_id": session_id,
+        "total_frame_count": total_frame_count,
+        "total_modality_counts": total_modality_counts,
+        "total_eeg_sample_counts": total_eeg_sample_counts,
+        "phases": phase_summaries,
+    }
 
 
 async def _replay(args: argparse.Namespace) -> int:
@@ -1546,6 +1841,31 @@ def _build_source(args: argparse.Namespace, duration_seconds: int):
             )
         )
 
+    if getattr(args, "source", "amused") == "brainflow":
+        from muse_tmr.sources.brainflow_source import BrainFlowSource, BrainFlowSourceConfig
+
+        return BrainFlowSource(
+            BrainFlowSourceConfig(
+                board_name=getattr(args, "brainflow_board", "MUSE_S_ATHENA_BOARD"),
+                preset=getattr(args, "brainflow_preset", "p1041"),
+                low_latency=not getattr(args, "brainflow_no_low_latency", False),
+                address=getattr(args, "address", None),
+                serial_number=getattr(args, "brainflow_serial_number", None),
+                name_filter=getattr(args, "name_filter", "Muse"),
+                duration_seconds=duration_seconds,
+                poll_interval_seconds=getattr(args, "brainflow_poll_interval", 0.05),
+                max_chunk_samples=getattr(args, "brainflow_chunk_samples", 256),
+                connect_timeout_seconds=getattr(args, "brainflow_connect_timeout", 20.0),
+                stream_start_timeout_seconds=getattr(
+                    args,
+                    "brainflow_stream_start_timeout",
+                    10.0,
+                ),
+                stop_timeout_seconds=getattr(args, "brainflow_stop_timeout", 10.0),
+                session_cooldown_seconds=getattr(args, "brainflow_session_cooldown", 2.0),
+            )
+        )
+
     from muse_tmr.sources.amused_source import AmusedSource
 
     return AmusedSource(
@@ -1555,6 +1875,23 @@ def _build_source(args: argparse.Namespace, duration_seconds: int):
         duration_seconds=duration_seconds,
         verbose=not getattr(args, "quiet", False),
     )
+
+
+def _add_brainflow_args(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--brainflow-board", default="MUSE_S_ATHENA_BOARD")
+    parser.add_argument("--brainflow-preset", default="p1041")
+    parser.add_argument("--brainflow-serial-number")
+    parser.add_argument(
+        "--brainflow-no-low-latency",
+        action="store_true",
+        help="Disable BrainFlow's low_latency option for Muse S Athena.",
+    )
+    parser.add_argument("--brainflow-poll-interval", type=float, default=0.05)
+    parser.add_argument("--brainflow-chunk-samples", type=int, default=256)
+    parser.add_argument("--brainflow-connect-timeout", type=float, default=20.0)
+    parser.add_argument("--brainflow-stream-start-timeout", type=float, default=10.0)
+    parser.add_argument("--brainflow-stop-timeout", type=float, default=10.0)
+    parser.add_argument("--brainflow-session-cooldown", type=float, default=2.0)
 
 
 def _add_openmuse_lsl_args(parser: argparse.ArgumentParser) -> None:
@@ -1591,6 +1928,11 @@ def _openmuse_stream_names(args: argparse.Namespace) -> Mapping[str, tuple]:
         "heart_rate": (args.openmuse_heart_rate_stream, "Muse_HEART", "Muse_HEART_RATE"),
         "battery": (args.openmuse_battery_stream, "Muse_BATTERY", "Muse-Telemetry"),
     }
+
+
+def _default_blink_diagnostic_output(source: str) -> Path:
+    timestamp = dt.datetime.now().strftime("%Y%m%d_%H%M%S")
+    return _default_path_base() / "data" / "reports" / f"blink_artifacts_{source}_{timestamp}.json"
 
 
 def _default_recording_dir() -> Path:

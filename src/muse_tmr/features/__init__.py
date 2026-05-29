@@ -1,5 +1,12 @@
 """Feature extraction components."""
 
+from muse_tmr.features.artifact_detection import (
+    ArtifactDiagnosticConfig,
+    ArtifactPhase,
+    BlinkArtifactDiagnosticReport,
+    analyze_blink_artifact_phases,
+    default_blink_artifact_phases,
+)
 from muse_tmr.features.eeg_features import (
     EEGFeatureConfig,
     EEGFeatureRow,
@@ -27,6 +34,9 @@ from muse_tmr.features.ppg_features import (
 )
 
 __all__ = [
+    "ArtifactDiagnosticConfig",
+    "ArtifactPhase",
+    "BlinkArtifactDiagnosticReport",
     "CueMovementLog",
     "EEGFeatureConfig",
     "EEGFeatureRow",
@@ -39,6 +49,8 @@ __all__ = [
     "PPGFeatureRow",
     "SleepEpoch",
     "SuddenHeartRateChange",
+    "analyze_blink_artifact_phases",
+    "default_blink_artifact_phases",
     "export_eeg_feature_rows",
     "export_imu_feature_rows",
     "export_ppg_feature_rows",
