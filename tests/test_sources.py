@@ -117,6 +117,145 @@ class TestSources(unittest.IsolatedAsyncioTestCase):
             with self.assertRaisesRegex(RuntimeError, "Muse BLE discovery crashed"):
                 await source.discover()
 
+    async def test_amused_discover_filters_devices_by_name(self):
+        devices = [
+            MuseDeviceInfo(name="Muse S Athena", address="aa", rssi=-40),
+            MuseDeviceInfo(name="Other Headset", address="bb", rssi=-50),
+        ]
+        source = AmusedSource(verbose=False)
+
+        async def fake_discover():
+            return devices
+
+        with patch(
+            "muse_tmr.sources.amused_source._discover_muse_devices",
+            side_effect=fake_discover,
+        ):
+            found = await source.discover()
+
+        self.assertEqual([device.address for device in found], ["aa"])
+
+    async def test_amused_connect_uses_first_discovered_device_without_address(self):
+        device = MuseDeviceInfo(name="Muse S Athena", address="aa", rssi=-40)
+        source = AmusedSource(
+            stream_client_factory=FakeStreamClient,
+            verbose=False,
+        )
+
+        async def fake_discover():
+            return [device]
+
+        with patch(
+            "muse_tmr.sources.amused_source._discover_muse_devices",
+            side_effect=fake_discover,
+        ):
+            metadata = await source.connect()
+
+        self.assertEqual(source.address, "aa")
+        self.assertEqual(metadata.device_name, "Muse S Athena")
+
+    async def test_amused_connect_fails_when_no_devices_found(self):
+        source = AmusedSource(
+            stream_client_factory=FakeStreamClient,
+            verbose=False,
+        )
+
+        async def fake_discover():
+            return []
+
+        with patch(
+            "muse_tmr.sources.amused_source._discover_muse_devices",
+            side_effect=fake_discover,
+        ):
+            with self.assertRaisesRegex(RuntimeError, "No Muse devices found"):
+                await source.connect()
+
+    async def test_amused_stream_raises_when_client_stream_fails(self):
+        class FailingStreamClient(FakeStreamClient):
+            async def connect_and_stream(self, address, duration_seconds=30, preset="p1034"):
+                await asyncio.sleep(0)
+                return False
+
+        source = AmusedSource(
+            address="test-address",
+            stream_client_factory=FailingStreamClient,
+            verbose=False,
+        )
+        await source.connect()
+
+        with self.assertRaisesRegex(RuntimeError, "amused stream failed"):
+            async for _ in source.stream():
+                pass
+
+        self.assertEqual(source.disconnect_reason, "stream_failed")
+
+    async def test_amused_full_frame_queue_records_disconnect_reason(self):
+        source = AmusedSource(
+            address="test-address",
+            stream_client_factory=FakeStreamClient,
+            queue_size=1,
+            verbose=False,
+        )
+        await source.connect()
+        source._ensure_queue()
+        decoded = DecodedData(
+            timestamp=dt.datetime.fromtimestamp(3.0),
+            packet_type="EEG",
+            eeg={"TP9": [0.25]},
+            raw_bytes=b"\x11",
+        )
+
+        source._handle_decoded(decoded)
+        source._handle_decoded(decoded)
+
+        self.assertEqual(source.frame_count, 2)
+        self.assertEqual(source.disconnect_reason, "frame_queue_full")
+
+    async def test_amused_discover_subprocess_parses_device_payload(self):
+        completed = subprocess.CompletedProcess(
+            args=["python", "-c", "..."],
+            returncode=0,
+            stdout='[{"name": "Muse S Athena", "address": "aa", "rssi": -42}]',
+            stderr="",
+        )
+        source = AmusedSource(verbose=False)
+
+        with patch("muse_tmr.sources.amused_source.sys.platform", "darwin"), patch(
+            "muse_tmr.sources.amused_source.subprocess.run",
+            return_value=completed,
+        ):
+            devices = await source.discover()
+
+        self.assertEqual(len(devices), 1)
+        self.assertEqual(devices[0].address, "aa")
+        self.assertEqual(devices[0].rssi, -42)
+
+    async def test_amused_discover_subprocess_timeout_reports_permissions_hint(self):
+        source = AmusedSource(verbose=False)
+
+        with patch("muse_tmr.sources.amused_source.sys.platform", "darwin"), patch(
+            "muse_tmr.sources.amused_source.subprocess.run",
+            side_effect=subprocess.TimeoutExpired(cmd="python", timeout=15.0),
+        ):
+            with self.assertRaisesRegex(RuntimeError, "discovery timed out"):
+                await source.discover()
+
+    async def test_amused_discover_subprocess_invalid_payload_raises(self):
+        completed = subprocess.CompletedProcess(
+            args=["python", "-c", "..."],
+            returncode=0,
+            stdout="not-json",
+            stderr="",
+        )
+        source = AmusedSource(verbose=False)
+
+        with patch("muse_tmr.sources.amused_source.sys.platform", "darwin"), patch(
+            "muse_tmr.sources.amused_source.subprocess.run",
+            return_value=completed,
+        ):
+            with self.assertRaisesRegex(RuntimeError, "invalid device data"):
+                await source.discover()
+
     async def test_amused_stop_cancels_stream_task_from_another_loop(self):
         source = AmusedSource(verbose=False)
         ready = threading.Event()

@@ -1,8 +1,19 @@
+import math
 import unittest
 import time
 from types import SimpleNamespace
+from unittest.mock import patch
 
-from muse_tmr.sources.brainflow_source import BrainFlowSource, BrainFlowSourceConfig
+from muse_tmr.sources.brainflow_source import (
+    BrainFlowDependencyError,
+    BrainFlowSource,
+    BrainFlowSourceConfig,
+    _BrainFlowBackend,
+    _last_finite,
+    _load_brainflow_backend,
+    _row_series,
+    _sample_count,
+)
 
 
 class FakeBrainFlowBoard:
@@ -220,6 +231,209 @@ class TestBrainFlowSource(unittest.IsolatedAsyncioTestCase):
         await source.stop()
 
         self.assertGreaterEqual(time.monotonic() - started, 0.01)
+
+
+class TestBrainFlowSourceConfigValidation(unittest.TestCase):
+    def test_config_rejects_invalid_values(self):
+        invalid_kwargs = (
+            {"board_name": ""},
+            {"duration_seconds": -1.0},
+            {"poll_interval_seconds": 0.0},
+            {"max_chunk_samples": 0},
+            {"connect_timeout_seconds": 0.0},
+            {"stream_start_timeout_seconds": 0.0},
+            {"stop_timeout_seconds": 0.0},
+            {"session_cooldown_seconds": -1.0},
+        )
+        for kwargs in invalid_kwargs:
+            with self.assertRaises(ValueError):
+                BrainFlowSourceConfig(**kwargs)
+
+
+class TestBrainFlowSourceErrorPaths(unittest.IsolatedAsyncioTestCase):
+    async def test_discover_respects_name_filter(self):
+        backend = FakeBrainFlowBackend(FakeBrainFlowBoard({}))
+        source = BrainFlowSource(
+            BrainFlowSourceConfig(name_filter="OtherHeadset"),
+            brainflow_backend=backend,
+        )
+
+        devices = await source.discover()
+
+        self.assertEqual(devices, ())
+
+    async def test_connect_prefers_explicit_device_address(self):
+        from muse_tmr.sources.base_source import MuseDeviceInfo
+
+        backend = FakeBrainFlowBackend(FakeBrainFlowBoard({}))
+        source = BrainFlowSource(
+            BrainFlowSourceConfig(address="AA:BB", session_cooldown_seconds=0.0),
+            brainflow_backend=backend,
+        )
+        device = MuseDeviceInfo(name="Muse", address="CC:DD", rssi=0)
+
+        metadata = await source.connect(device)
+
+        self.assertEqual(backend.params.mac_address, "CC:DD")
+        self.assertEqual(metadata.device_id, "CC:DD")
+
+    async def test_stream_start_timeout_sets_disconnect_reason(self):
+        class SlowStartBoard(FakeBrainFlowBoard):
+            def start_stream(self, buffer_size=450000, streamer_params=""):
+                time.sleep(0.2)
+                super().start_stream(buffer_size, streamer_params)
+
+        board = SlowStartBoard({})
+        backend = FakeBrainFlowBackend(board)
+        source = BrainFlowSource(
+            BrainFlowSourceConfig(
+                stream_start_timeout_seconds=0.01,
+                session_cooldown_seconds=0.0,
+            ),
+            brainflow_backend=backend,
+        )
+        await source.connect()
+
+        with self.assertRaisesRegex(RuntimeError, "start_stream timed out"):
+            async for _ in source.stream():
+                pass
+
+        self.assertEqual(source.disconnect_reason, "stream_start_timeout")
+
+    async def test_stop_stream_timeout_still_releases_session(self):
+        class SlowStopBoard(FakeBrainFlowBoard):
+            def stop_stream(self):
+                time.sleep(0.2)
+                super().stop_stream()
+
+        board = SlowStopBoard({})
+        backend = FakeBrainFlowBackend(board)
+        source = BrainFlowSource(
+            BrainFlowSourceConfig(
+                stop_timeout_seconds=0.01,
+                session_cooldown_seconds=0.0,
+            ),
+            brainflow_backend=backend,
+        )
+        await source.connect()
+        source._streaming = True
+
+        await source.stop()
+
+        self.assertEqual(source.disconnect_reason, "stop_timeout")
+        self.assertTrue(board.released)
+        self.assertIsNone(source._board)
+
+    async def test_diagnostics_reports_counts_and_disconnect_reason(self):
+        backend = FakeBrainFlowBackend(FakeBrainFlowBoard({}))
+        source = BrainFlowSource(
+            BrainFlowSourceConfig(session_cooldown_seconds=0.0),
+            brainflow_backend=backend,
+        )
+
+        diagnostics = source.diagnostics()
+
+        self.assertEqual(diagnostics["source"], "brainflow")
+        self.assertEqual(diagnostics["frame_count"], 0)
+        self.assertIsNone(diagnostics["last_poll_age_seconds"])
+        self.assertIsNone(diagnostics["disconnect_reason"])
+
+
+class _FakeEnum:
+    def __init__(self, value):
+        self.value = value
+
+
+class _FakeBoardShim:
+    @staticmethod
+    def get_eeg_channels(board_id, preset):
+        return [1, 2]
+
+    @staticmethod
+    def get_eeg_names(board_id, preset):
+        raise RuntimeError("names unavailable")
+
+    @staticmethod
+    def get_other_channels(board_id, preset):
+        raise RuntimeError("no other channels")
+
+    @staticmethod
+    def get_accel_channels(board_id, preset):
+        return [3, 4, 5]
+
+    @staticmethod
+    def get_gyro_channels(board_id, preset):
+        return [6, 7, 8]
+
+    @staticmethod
+    def get_optical_channels(board_id, preset):
+        raise RuntimeError("no optical channels")
+
+    @staticmethod
+    def get_ppg_channels(board_id, preset):
+        return [9, 10]
+
+    @staticmethod
+    def get_battery_channel(board_id, preset):
+        raise RuntimeError("no battery channel")
+
+    @staticmethod
+    def get_timestamp_channel(board_id, preset):
+        return 0
+
+
+class TestBrainFlowBackendWrapper(unittest.TestCase):
+    def setUp(self):
+        module = SimpleNamespace(
+            BoardIds=SimpleNamespace(MUSE_S_ATHENA_BOARD=_FakeEnum(38)),
+            BrainFlowPresets=SimpleNamespace(DEFAULT_PRESET=_FakeEnum(0)),
+            BrainFlowInputParams=SimpleNamespace,
+            BoardShim=_FakeBoardShim,
+        )
+        self.backend = _BrainFlowBackend(module)
+
+    def test_enum_values_are_unwrapped(self):
+        self.assertEqual(self.backend.board_id_value("MUSE_S_ATHENA_BOARD"), 38)
+        self.assertEqual(self.backend.preset_value("DEFAULT_PRESET"), 0)
+
+    def test_channel_lookups_degrade_to_empty_or_none_on_backend_errors(self):
+        self.assertEqual(self.backend.eeg_channels(38, 0), (1, 2))
+        self.assertEqual(self.backend.eeg_names(38, 0), ())
+        self.assertEqual(self.backend.other_channels(38, 0), ())
+        self.assertIsNone(self.backend.battery_channel(38, 0))
+        self.assertEqual(self.backend.timestamp_channel(38, 0), 0)
+
+    def test_optical_channels_fall_back_to_ppg_channels(self):
+        self.assertEqual(self.backend.optical_channels(38, 0), (9, 10))
+
+    def test_missing_brainflow_dependency_raises_actionable_error(self):
+        with patch(
+            "muse_tmr.sources.brainflow_source.importlib.import_module",
+            side_effect=ImportError("no brainflow"),
+        ):
+            with self.assertRaisesRegex(BrainFlowDependencyError, "brainflow"):
+                _load_brainflow_backend()
+
+
+class TestBrainFlowDataHelpers(unittest.TestCase):
+    def test_sample_count_handles_lists_scalars_and_empty_data(self):
+        self.assertEqual(_sample_count([[1.0, 2.0], [3.0, 4.0]]), 2)
+        self.assertEqual(_sample_count([]), 0)
+        self.assertEqual(_sample_count([None]), 0)
+        self.assertEqual(_sample_count([5.0]), 0)
+        self.assertEqual(_sample_count(5.0), 0)
+
+    def test_row_series_handles_missing_rows_and_scalars(self):
+        self.assertEqual(_row_series([[1.0, 2.0]], -1), ())
+        self.assertEqual(_row_series([[1.0, 2.0]], 5), ())
+        self.assertEqual(_row_series([5.0], 0), (5.0,))
+        self.assertEqual(_row_series([[1.0, 2.0]], 0), (1.0, 2.0))
+
+    def test_last_finite_skips_nan_and_handles_all_nan(self):
+        self.assertEqual(_last_finite([1.0, 2.0, math.nan]), 2.0)
+        self.assertEqual(_last_finite([math.nan, 3.0]), 3.0)
+        self.assertIsNone(_last_finite([math.nan, math.inf]))
+        self.assertIsNone(_last_finite([]))
 
 
 if __name__ == "__main__":

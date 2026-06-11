@@ -1,9 +1,9 @@
 # Test Status
 
 ## Current Test Results
-- **380 tests passing**, 3 skipped ✅
+- **434 tests passing**, 3 skipped ✅
 - **0 tests failing** 🎉
-- **~86% line coverage** on the `muse_tmr` package
+- **~89% line coverage** on the `muse_tmr` package
 
 Skipped tests require an optional pandas Parquet engine (`pyarrow` or
 `fastparquet`); install one to exercise the Parquet export paths.
@@ -11,14 +11,14 @@ Skipped tests require an optional pandas Parquet engine (`pyarrow` or
 ## Coverage Overview
 Well covered: REM detection (heuristic + personal classifier), the
 `StableRemGate` and `ArousalGuard` safety gates, the TMR cue scheduler,
-randomization, and the staged pilots.
+randomization, the staged pilots, audio playback safety branches
+(volume caps, fades, backend fallbacks), the ring buffer, and the
+acquisition sources' error/timeout paths.
 
 Lower coverage worth improving:
-- Acquisition sources with hardware-facing reconnect/error paths
-  (`openmuse_lsl_source`, `brainflow_source`, `amused_source`)
-- `data/ring_buffer.py` (currently untested)
-- `audio/audio_player.py` fallback and volume-cap branches
 - `data/watchdog.py` no-data timeout / reconnect logic
+- Legacy root-level modules (`muse_sleep_parser`, `muse_integrated_parser`,
+  `muse_stream_client`, `muse_discovery`) if they remain on the live path
 
 ## Running Tests
 
