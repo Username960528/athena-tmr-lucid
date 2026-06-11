@@ -2,8 +2,10 @@ import io
 import json
 import tempfile
 import unittest
+import wave
 from contextlib import redirect_stdout
 from pathlib import Path
+from unittest.mock import patch
 
 from muse_tmr.audio import (
     AudioPlayer,
@@ -12,6 +14,13 @@ from muse_tmr.audio import (
     MockAudioBackend,
     TestCue,
     create_audio_backend,
+)
+from muse_tmr.audio.audio_player import (
+    AudioPlaybackRequest,
+    DryRunAudioBackend,
+    MacOSAfplayBackend,
+    _fade_envelope,
+    _write_test_tone,
 )
 from muse_tmr.cli.main import build_parser, main
 
@@ -104,6 +113,183 @@ class TestAudioCuePlayer(unittest.TestCase):
 
         self.assertFalse(hasattr(result, "gate_open"))
         self.assertFalse(hasattr(result, "should_play"))
+
+
+class TestAudioPlaybackValidation(unittest.TestCase):
+    def test_config_rejects_out_of_range_volumes_and_negative_fades(self):
+        invalid_configs = (
+            AudioPlaybackConfig(max_volume=1.5),
+            AudioPlaybackConfig(max_volume=-0.1),
+            AudioPlaybackConfig(default_volume=1.5),
+            AudioPlaybackConfig(fade_in_seconds=-0.1),
+            AudioPlaybackConfig(fade_out_seconds=-0.1),
+        )
+        for config in invalid_configs:
+            with self.assertRaises(ValueError):
+                config.validate()
+
+    def test_invalid_config_is_rejected_at_player_construction(self):
+        with self.assertRaises(ValueError):
+            AudioCuePlayer(
+                AudioPlaybackConfig(max_volume=1.5),
+                backend=MockAudioBackend(),
+            )
+
+    def test_test_cue_rejects_invalid_fields(self):
+        invalid_cues = (
+            TestCue(cue_id=""),
+            TestCue(frequency_hz=0.0),
+            TestCue(frequency_hz=-440.0),
+            TestCue(duration_seconds=0.0),
+        )
+        for cue in invalid_cues:
+            with self.assertRaises(ValueError):
+                cue.validate()
+
+    def test_playback_request_to_dict_reports_volume_cap(self):
+        request = AudioPlaybackRequest(
+            cue_id="test-cue",
+            frequency_hz=440.0,
+            duration_seconds=0.01,
+            requested_volume=0.80,
+            effective_volume=0.20,
+            max_volume=0.20,
+            fade_in_seconds=0.25,
+            fade_out_seconds=0.25,
+        )
+
+        event = request.to_dict()
+
+        self.assertTrue(request.volume_capped)
+        self.assertTrue(event["volume_capped"])
+        self.assertEqual(event["requested_volume"], 0.80)
+        self.assertEqual(event["effective_volume"], 0.20)
+
+
+class TestAudioBackendFactory(unittest.TestCase):
+    def test_named_backends_are_constructed(self):
+        self.assertIsInstance(create_audio_backend("afplay"), MacOSAfplayBackend)
+        self.assertIsInstance(create_audio_backend("dry-run"), DryRunAudioBackend)
+        self.assertIsInstance(create_audio_backend("mock"), MockAudioBackend)
+
+    def test_unknown_backend_name_is_rejected(self):
+        with self.assertRaises(ValueError):
+            create_audio_backend("speakers")
+
+    def test_system_backend_falls_back_to_dry_run_without_afplay(self):
+        with patch("muse_tmr.audio.audio_player.shutil.which", return_value=None):
+            backend = create_audio_backend("system")
+
+        self.assertIsInstance(backend, DryRunAudioBackend)
+
+    def test_system_backend_uses_afplay_when_available(self):
+        with patch(
+            "muse_tmr.audio.audio_player.shutil.which",
+            return_value="/usr/bin/afplay",
+        ):
+            backend = create_audio_backend("system")
+
+        self.assertIsInstance(backend, MacOSAfplayBackend)
+
+
+class TestMacOSAfplayBackend(unittest.TestCase):
+    def test_missing_afplay_skips_playback_instead_of_failing(self):
+        with patch("muse_tmr.audio.audio_player.shutil.which", return_value=None):
+            player = AudioCuePlayer(backend=MacOSAfplayBackend())
+            result = player.play_test_cue(TestCue(duration_seconds=0.01))
+
+        self.assertEqual(result.status, "skipped")
+        self.assertIn("afplay_unavailable", result.reason_codes)
+
+    def test_afplay_playback_writes_tone_and_reports_device_limitation(self):
+        config = AudioPlaybackConfig(device_name="Bedroom Headphones")
+        with patch(
+            "muse_tmr.audio.audio_player.shutil.which",
+            return_value="/usr/bin/afplay",
+        ), patch("muse_tmr.audio.audio_player.subprocess.run") as run_mock:
+            player = AudioCuePlayer(config, backend=MacOSAfplayBackend())
+            result = player.play_test_cue(TestCue(duration_seconds=0.01))
+
+        self.assertTrue(result.played)
+        self.assertIn("system_playback", result.reason_codes)
+        self.assertIn("device_selection_unsupported", result.reason_codes)
+        self.assertEqual(run_mock.call_args.args[0][0], "afplay")
+
+
+class TestToneGeneration(unittest.TestCase):
+    @staticmethod
+    def _request(effective_volume=0.20, fade_seconds=0.05, duration_seconds=0.2):
+        return AudioPlaybackRequest(
+            cue_id="test-cue",
+            frequency_hz=440.0,
+            duration_seconds=duration_seconds,
+            requested_volume=effective_volume,
+            effective_volume=effective_volume,
+            max_volume=effective_volume,
+            fade_in_seconds=fade_seconds,
+            fade_out_seconds=fade_seconds,
+        )
+
+    @staticmethod
+    def _samples(path):
+        with wave.open(path, "rb") as audio:
+            raw = audio.readframes(audio.getnframes())
+        return [
+            int.from_bytes(raw[index : index + 2], byteorder="little", signed=True)
+            for index in range(0, len(raw), 2)
+        ]
+
+    def test_written_tone_amplitude_never_exceeds_effective_volume(self):
+        request = self._request(effective_volume=0.20)
+        with tempfile.TemporaryDirectory() as tmp:
+            path = str(Path(tmp) / "tone.wav")
+            _write_test_tone(path, request)
+            samples = self._samples(path)
+
+        self.assertEqual(len(samples), int(44100 * request.duration_seconds))
+        amplitude_cap = int(32767 * request.effective_volume)
+        self.assertLessEqual(max(abs(sample) for sample in samples), amplitude_cap)
+        self.assertGreater(max(abs(sample) for sample in samples), 0)
+
+    def test_fade_in_and_out_keep_edges_quieter_than_middle(self):
+        request = self._request(fade_seconds=0.05, duration_seconds=0.2)
+        with tempfile.TemporaryDirectory() as tmp:
+            path = str(Path(tmp) / "tone.wav")
+            _write_test_tone(path, request)
+            samples = self._samples(path)
+
+        fade_frames = int(44100 * request.fade_in_seconds)
+        edge_peak = max(
+            max(abs(sample) for sample in samples[: fade_frames // 4]),
+            max(abs(sample) for sample in samples[-fade_frames // 4 :]),
+        )
+        middle = samples[len(samples) // 4 : -len(samples) // 4]
+        middle_peak = max(abs(sample) for sample in middle)
+        self.assertLess(edge_peak, middle_peak)
+        self.assertEqual(samples[0], 0)
+
+    def test_fade_envelope_is_bounded_and_monotonic_at_edges(self):
+        frame_count = 100
+        fade_frames = 10
+
+        envelope = [
+            _fade_envelope(index, frame_count, fade_frames, fade_frames)
+            for index in range(frame_count)
+        ]
+
+        self.assertEqual(envelope[0], 0.0)
+        self.assertEqual(envelope[frame_count // 2], 1.0)
+        self.assertTrue(all(0.0 <= value <= 1.0 for value in envelope))
+        self.assertEqual(envelope[:fade_frames], sorted(envelope[:fade_frames]))
+        self.assertEqual(
+            envelope[-fade_frames:],
+            sorted(envelope[-fade_frames:], reverse=True),
+        )
+
+    def test_zero_fade_envelope_is_flat(self):
+        envelope = [_fade_envelope(index, 10, 0, 0) for index in range(10)]
+
+        self.assertEqual(envelope, [1.0] * 10)
 
 
 class TestAudioCuePlayerCli(unittest.TestCase):

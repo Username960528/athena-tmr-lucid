@@ -1,6 +1,15 @@
 import unittest
+from unittest.mock import patch
 
-from muse_tmr.sources.openmuse_lsl_source import OpenMuseLslConfig, OpenMuseLslSource
+from muse_tmr.sources.openmuse_lsl_source import (
+    OpenMuseLslConfig,
+    OpenMuseLslDependencyError,
+    OpenMuseLslSource,
+    _channel_labels,
+    _load_lsl_backend,
+    _MneLslBackend,
+    _PylslBackend,
+)
 
 
 class FakeStreamInfo:
@@ -132,6 +141,267 @@ class TestOpenMuseLslSource(unittest.IsolatedAsyncioTestCase):
 
         with self.assertRaises(RuntimeError):
             await source.connect()
+
+    async def test_connect_fails_with_actionable_error_when_no_streams_found(self):
+        backend = FakeLslBackend(infos=(), inlets={})
+        source = OpenMuseLslSource(lsl_backend=backend)
+
+        with self.assertRaisesRegex(RuntimeError, "No OpenMuse LSL streams found"):
+            await source.connect()
+
+    async def test_resolve_falls_back_to_lookup_by_configured_stream_names(self):
+        eeg_info = FakeStreamInfo("Muse_EEG", 4)
+
+        class ByNameOnlyBackend(FakeLslBackend):
+            def resolve_streams(self, timeout_seconds):
+                return ()
+
+        backend = ByNameOnlyBackend(
+            infos=(eeg_info,),
+            inlets={"Muse_EEG": FakeInlet([([1.0, 2.0, 3.0, 4.0], 12.0)])},
+        )
+        source = OpenMuseLslSource(lsl_backend=backend)
+
+        metadata = await source.connect()
+
+        self.assertTrue(metadata.capabilities["eeg"])
+        self.assertFalse(metadata.capabilities["imu"])
+
+    async def test_stream_maps_ppg_heart_rate_and_battery_modalities(self):
+        infos = (
+            FakeStreamInfo("Muse_PPG", 3),
+            FakeStreamInfo("Muse_HR", 1),
+            FakeStreamInfo("Muse_BATT", 1),
+        )
+        inlets = {
+            "Muse_PPG": FakeInlet([([10.0, 20.0, 30.0], 12.0)]),
+            "Muse_HR": FakeInlet([([62.0], 12.1)]),
+            "Muse_BATT": FakeInlet([([88.0], 12.2)]),
+        }
+        backend = FakeLslBackend(infos=infos, inlets=inlets)
+        source = OpenMuseLslSource(lsl_backend=backend)
+
+        await source.connect()
+        frames = {}
+        async for frame in source.stream():
+            frames[frame.modalities()[0]] = frame
+            if len(frames) == 3:
+                await source.stop()
+
+        self.assertEqual(frames["ppg"].ppg.channels["PPG0"], (10.0,))
+        self.assertEqual(frames["heart_rate"].heart_rate.bpm, 62.0)
+        self.assertEqual(frames["battery"].battery.percent, 88.0)
+
+    async def test_stream_auto_connects_and_respects_duration_deadline(self):
+        backend = FakeLslBackend(
+            infos=(FakeStreamInfo("Muse_EEG", 4),),
+            inlets={"Muse_EEG": FakeInlet([([1.0, 2.0, 3.0, 4.0], 12.0)])},
+        )
+        source = OpenMuseLslSource(
+            OpenMuseLslConfig(duration_seconds=0.05, poll_interval_seconds=0.01),
+            lsl_backend=backend,
+        )
+
+        frames = [frame async for frame in source.stream()]
+
+        self.assertEqual(len(frames), 1)
+        self.assertIsNotNone(source.metadata)
+
+    async def test_channel_labels_extend_fallback_when_stream_has_more_channels(self):
+        backend = FakeLslBackend(
+            infos=(FakeStreamInfo("Muse_EEG", 7),),
+            inlets={
+                "Muse_EEG": FakeInlet(
+                    [([1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0], 12.0)]
+                )
+            },
+        )
+        source = OpenMuseLslSource(lsl_backend=backend)
+
+        await source.connect()
+        stream = source.stream().__aiter__()
+        frame = await stream.__anext__()
+        await source.stop()
+
+        self.assertIn("TP9", frame.eeg.channels_uv)
+        self.assertIn("CH5", frame.eeg.channels_uv)
+        self.assertIn("CH6", frame.eeg.channels_uv)
+
+    async def test_pre_epoch_lsl_timestamps_fall_back_to_wall_clock(self):
+        class NoClockBackend(FakeLslBackend):
+            local_clock = None
+
+        backend = NoClockBackend(
+            infos=(FakeStreamInfo("Muse_EEG", 4),),
+            inlets={"Muse_EEG": FakeInlet([([1.0, 2.0, 3.0, 4.0], 12.0)])},
+        )
+        source = OpenMuseLslSource(lsl_backend=backend)
+
+        await source.connect()
+        stream = source.stream().__aiter__()
+        frame = await stream.__anext__()
+        await source.stop()
+
+        self.assertGreater(frame.timestamp, 1_000_000_000)
+
+
+class TestOpenMuseLslConfigValidation(unittest.TestCase):
+    def test_config_rejects_invalid_values(self):
+        invalid_kwargs = (
+            {"resolve_timeout_seconds": -1.0},
+            {"pull_timeout_seconds": -1.0},
+            {"poll_interval_seconds": 0.0},
+            {"max_buffer_seconds": 0},
+            {"duration_seconds": -1.0},
+            {"required_modalities": ("eeg", "telepathy")},
+        )
+        for kwargs in invalid_kwargs:
+            with self.assertRaises(ValueError):
+                OpenMuseLslConfig(**kwargs)
+
+
+class _KwargOnlyModule:
+    """Fake LSL module whose functions accept keyword timeout arguments."""
+
+    def __init__(self, infos):
+        self.infos = tuple(infos)
+        self.inlet_kwargs = None
+
+    def resolve_streams(self, timeout=None):
+        return self.infos
+
+    def StreamInlet(self, info, **kwargs):
+        self.inlet_kwargs = kwargs
+        return FakeInlet([])
+
+    def local_clock(self):
+        return 10.0
+
+
+class _PositionalOnlyModule:
+    """Fake LSL module that rejects keyword arguments (older API style)."""
+
+    def __init__(self, infos):
+        self.infos = tuple(infos)
+        self.positional_calls = []
+
+    def resolve_streams(self, timeout_seconds):
+        self.positional_calls.append(("resolve_streams", timeout_seconds))
+        return self.infos
+
+    def resolve_stream(self, prop, value, timeout_seconds):
+        self.positional_calls.append(("resolve_stream", prop, value))
+        return tuple(info for info in self.infos if info.name() == value)
+
+    def StreamInlet(self, info):
+        return FakeInlet([])
+
+    def local_clock(self):
+        return 10.0
+
+
+class TestLslBackendWrappers(unittest.TestCase):
+    def test_mne_lsl_backend_falls_back_to_positional_timeout(self):
+        module = _PositionalOnlyModule((FakeStreamInfo("Muse_EEG", 4),))
+        backend = _MneLslBackend(module)
+
+        infos = backend.resolve_streams(1.0)
+        by_name = backend.resolve_by_name("Muse_EEG", 1.0)
+        inlet = backend.stream_inlet(infos[0], max_buffer_seconds=30)
+
+        self.assertEqual(len(infos), 1)
+        self.assertEqual(len(by_name), 1)
+        self.assertIsInstance(inlet, FakeInlet)
+        self.assertEqual(backend.local_clock(), 10.0)
+
+    def test_mne_lsl_backend_supports_keyword_timeout(self):
+        module = _KwargOnlyModule((FakeStreamInfo("Muse_EEG", 4),))
+        backend = _MneLslBackend(module)
+
+        infos = backend.resolve_streams(1.0)
+        backend.stream_inlet(infos[0], max_buffer_seconds=30)
+
+        self.assertEqual(len(infos), 1)
+        self.assertEqual(module.inlet_kwargs, {"max_buffered": 30})
+
+    def test_pylsl_backend_resolves_streams_and_by_name(self):
+        module = _PositionalOnlyModule((FakeStreamInfo("Muse_EEG", 4),))
+        backend = _PylslBackend(module)
+
+        infos = backend.resolve_streams(1.0)
+        by_name = backend.resolve_by_name("Muse_EEG", 1.0)
+        inlet = backend.stream_inlet(infos[0], max_buffer_seconds=30)
+
+        self.assertEqual(len(infos), 1)
+        self.assertEqual(len(by_name), 1)
+        self.assertIsInstance(inlet, FakeInlet)
+        self.assertEqual(backend.local_clock(), 10.0)
+
+    def test_pylsl_backend_returns_empty_when_resolvers_missing(self):
+        class EmptyModule:
+            pass
+
+        backend = _PylslBackend(EmptyModule())
+
+        self.assertEqual(backend.resolve_streams(1.0), ())
+        self.assertEqual(backend.resolve_by_name("Muse_EEG", 1.0), ())
+
+
+class _FakeXmlNode:
+    def __init__(self, children=(), values=None):
+        self._children = list(children)
+        self._values = values or {}
+
+    def child(self, name):
+        for child_name, node in self._children:
+            if child_name == name:
+                return node
+        return _FakeXmlNode()
+
+    def child_value(self, name):
+        return self._values.get(name, "")
+
+    def empty(self):
+        return not self._children and not self._values
+
+    def next_sibling(self):
+        return self._sibling if hasattr(self, "_sibling") else _FakeXmlNode()
+
+
+class TestChannelLabelMetadata(unittest.TestCase):
+    def test_labels_are_read_from_stream_xml_description(self):
+        tp9 = _FakeXmlNode(values={"label": "TP9"})
+        af7 = _FakeXmlNode(values={"label": "AF7"})
+        tp9._sibling = af7
+        af7._sibling = _FakeXmlNode()
+        channels = _FakeXmlNode(children=[("channel", tp9)])
+        root = _FakeXmlNode(children=[("channels", channels)])
+
+        class InfoWithDesc(FakeStreamInfo):
+            def desc(self):
+                return root
+
+        labels = _channel_labels(InfoWithDesc("Muse_EEG", 2), ("FALLBACK",))
+
+        self.assertEqual(labels, ("TP9", "AF7"))
+
+    def test_labels_fall_back_to_defaults_when_metadata_is_missing(self):
+        labels = _channel_labels(
+            FakeStreamInfo("Muse_EEG", 2),
+            ("TP9", "AF7", "AF8", "TP10"),
+        )
+
+        self.assertEqual(labels, ("TP9", "AF7"))
+
+
+class TestLslBackendLoading(unittest.TestCase):
+    def test_missing_optional_dependencies_raise_actionable_error(self):
+        with patch(
+            "muse_tmr.sources.openmuse_lsl_source.importlib.import_module",
+            side_effect=ImportError("no lsl"),
+        ):
+            with self.assertRaisesRegex(OpenMuseLslDependencyError, "mne_lsl"):
+                _load_lsl_backend()
 
 
 if __name__ == "__main__":

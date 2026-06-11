@@ -122,7 +122,6 @@ muse_tmr = "src/muse_tmr"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-collect_ignore = ["__init__.py"]
 
 [tool.muse_tmr.amused_py]
 strategy = "forked-source"
