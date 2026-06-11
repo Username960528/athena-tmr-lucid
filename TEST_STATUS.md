@@ -1,40 +1,50 @@
 # Test Status
 
 ## Current Test Results
-- **47 tests passing** ✅ 
+- **380 tests passing**, 3 skipped ✅
 - **0 tests failing** 🎉
+- **~86% line coverage** on the `muse_tmr` package
 
-## Passing Test Categories
-✅ Raw binary stream operations (8/8 tests)
-✅ Real-time decoder functionality (7/7 tests) 
-✅ PPG heart rate extraction (6/6 tests)
-✅ fNIRS processor functions (6/6 tests)
-✅ Integration tests (11/11 tests)
-✅ Package structure and imports (9/9 tests)
+Skipped tests require an optional pandas Parquet engine (`pyarrow` or
+`fastparquet`); install one to exercise the Parquet export paths.
 
-## Test Data
-- Tests now use **real captured data** from Muse S device
-- 5 seconds of real packets stored in `tests/test_data/`
-- Automatic fallback to synthetic data if real data unavailable
+## Coverage Overview
+Well covered: REM detection (heuristic + personal classifier), the
+`StableRemGate` and `ArousalGuard` safety gates, the TMR cue scheduler,
+randomization, and the staged pilots.
+
+Lower coverage worth improving:
+- Acquisition sources with hardware-facing reconnect/error paths
+  (`openmuse_lsl_source`, `brainflow_source`, `amused_source`)
+- `data/ring_buffer.py` (currently untested)
+- `audio/audio_player.py` fallback and volume-cap branches
+- `data/watchdog.py` no-data timeout / reconnect logic
 
 ## Running Tests
 
-### Quick tests (fast, core functionality):
+### Full suite under pytest (matches CI):
 ```bash
-python run_tests.py
+pip install -e ".[dev]"
+python -m pytest tests/
 ```
 
-### All tests:
+### With coverage:
 ```bash
-python -m pytest tests/
+python -m pytest tests/ --cov=muse_tmr --cov-report=term-missing
+```
+
+### Legacy unittest runner (no install required):
+```bash
+PYTHONPATH=src python run_tests.py --all
 ```
 
 ### Specific test file:
 ```bash
-python -m pytest tests/test_raw_stream.py -v
+python -m pytest tests/test_rem_gate.py -v
 ```
 
-## Test Performance
-- Core tests run in < 2 seconds
-- Full test suite runs in < 5 seconds
-- All tests properly handle edge cases and invalid input
+## Notes
+- A repository-root `conftest.py` puts `src/` on `sys.path` so `pytest` works
+  from a checkout without an editable install.
+- CI (`.github/workflows/guardrails.yml`) runs the full suite with coverage on
+  every push and pull request.

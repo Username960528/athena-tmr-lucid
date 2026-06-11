@@ -246,15 +246,20 @@ class TestDataValidation(unittest.TestCase):
         """Test EEG values are in physiological range"""
         decoder = MuseRealtimeDecoder()
 
-        # All-zero data → all-zero values (valid)
+        # Athena EEG packets carry unsigned 14-bit ADC counts biased around
+        # midscale, and the decoder defaults to centered microvolts. All-zero
+        # counts therefore map to the negative midscale offset, not 0 uV.
+        expected_uv = (0 - proto.EEG_MID_COUNT) * proto.EEG_SCALE_UV_PER_COUNT
         eeg_packet = build_tag_packet(proto.TAG_EEG_4CH, bytes(28))
         decoded = decoder.decode(eeg_packet)
 
         self.assertIsNotNone(decoded.eeg)
         for channel, samples in decoded.eeg.items():
             for sample in samples:
-                # With all-zero data, samples should be 0
-                self.assertAlmostEqual(sample, 0.0, places=5)
+                # All-zero counts decode to the centered-midscale value...
+                self.assertAlmostEqual(sample, expected_uv, places=3)
+                # ...and every sample stays within the physiological full scale.
+                self.assertLessEqual(abs(sample), proto.EEG_FULL_SCALE_UV)
 
     def test_heart_rate_ranges(self):
         """Test heart rate values are physiological"""
